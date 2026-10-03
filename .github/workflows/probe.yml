@@ -1,0 +1,12 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          UA='flood-alert/0.1 (github.com/moszasa09-boop/flood-alert)'
+          for u in api_overview.php api_river.php 'api_history.php?id=125&h=24' api_rain.php; do
+            curl -s -A "$UA" -o out.json -w "$u %{http_code} %{size_download}\n" "https://flood.pop.in.th/$u"
+            head -c 250 out.json; echo
+          done
