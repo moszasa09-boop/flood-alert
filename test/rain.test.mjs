@@ -59,11 +59,15 @@ test('ตัดจุดฝนเดี่ยว แต่เก็บกลุ�
   assert.equal(grp(5, 5), 2);
 });
 
-import { heavyRainSoon } from '../src/sources/openmeteo.mjs';
-test('ฝนหนักใน 3 ชม.', () => {
+import { rainWindowAhead } from '../src/sources/openmeteo.mjs';
+test('ช่วงฝนจากพยากรณ์รายชั่วโมง', () => {
   const now = Date.UTC(2026, 9, 3, 5, 30); // 12:30 ไทย
   const h = (hh, mm, prob) => ({ t: Date.UTC(2026, 9, 3, hh - 7, 0), mm, prob });
-  assert.deepEqual(heavyRainSoon([h(12, 2, 90), h(14, 15, 70)], now), { mm: 15, prob: 70, at: '14:00' });
-  assert.equal(heavyRainSoon([h(14, 15, 40)], now), null);      // โอกาสต่ำ
-  assert.equal(heavyRainSoon([h(17, 30, 90)], now), null);      // เกิน 3 ชม.
+  const w = rainWindowAhead([h(12, 0, 10), h(14, 1.2, 60), h(15, 6, 80), h(16, 0.6, 55), h(17, 0, 20), h(18, 3, 90)], now);
+  assert.equal(w.start, Date.UTC(2026, 9, 3, 7, 0));
+  assert.equal(w.end, Date.UTC(2026, 9, 3, 9, 0));
+  assert.equal(w.totalMm, 7.8);
+  assert.equal(w.peakMm, 6);
+  assert.equal(w.maxProb, 80);
+  assert.equal(rainWindowAhead([h(14, 5, 30)], now), null);
 });

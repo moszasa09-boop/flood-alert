@@ -34,3 +34,24 @@ export function heavyRainSoon(hourly, now, hours = 3, minMm = 10, minProb = 60) 
   }
   return null;
 }
+
+// ช่วงฝนครั้งถัดไปภายใน hours ชม. (ชั่วโมงที่โอกาส ≥ 50% และ ≥ 0.5 มม. ต่อเนื่องกัน)
+// → { start, end, maxProb, totalMm, peakMm } (start/end = เวลาเริ่มของชั่วโมงแรก/สุดท้าย) หรือ null
+export function rainWindowAhead(hourly, now, hours = 12, minProb = 50, minMm = 0.5) {
+  const list = (hourly || []).filter((h) => h.t + 3600e3 > now && h.t < now + hours * 3600e3);
+  let start = -1, stop = -1;
+  for (let i = 0; i < list.length; i++) {
+    const wet = (list[i].prob ?? 0) >= minProb && (list[i].mm ?? 0) >= minMm;
+    if (wet && start < 0) start = i;
+    if (start >= 0) { if (wet) stop = i; else break; }
+  }
+  if (start < 0) return null;
+  const seg = list.slice(start, stop + 1);
+  return {
+    start: seg[0].t,
+    end: seg.at(-1).t,
+    maxProb: Math.max(...seg.map((h) => h.prob ?? 0)),
+    totalMm: Math.round(seg.reduce((a, h) => a + (h.mm ?? 0), 0) * 10) / 10,
+    peakMm: Math.round(Math.max(...seg.map((h) => h.mm ?? 0)) * 10) / 10,
+  };
+}

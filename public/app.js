@@ -1,5 +1,6 @@
 // เว็บแอปเตือนภัยน้ำท่วม — อ่าน data/latest.json ที่ scripts/fetch.mjs สร้าง
 import { initRain } from './rain.js';
+import { renderRiver } from './river.js';
 const REFRESH_MS = 5 * 60 * 1000;
 const HOME_FALLBACK = { lat: 13.91, lon: 100.70 };
 const STALE_DATA_MIN = 75;           // ไฟล์ข้อมูลเก่ากว่านี้ = เตือนให้เช็กเอง
@@ -149,6 +150,7 @@ function render() {
 
   renderLine();
   renderInfo();
+  if (!$('#tab-river').hidden) renderRiver(DATA.river, { stale: dataStale });
   if (map || !$('#tab-map').hidden) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   handleAlerts(st, dataStale);
   if (window.gsap && !calm && !render.done) {
@@ -472,7 +474,8 @@ function renderInfo() {
     ${src.popnix ? `<div>สำรอง: ${src.popnix.ok ? `✅ ใช้ ${src.popnix.used} สถานี` : `❌ ${esc(src.popnix.error)}`} — <a href="https://flood.pop.in.th" target="_blank" rel="noopener">ข้อมูล: สำนักการระบายน้ำ กรุงเทพมหานคร ผ่าน POPNIX Flood (flood.pop.in.th)</a></div>` : ''}
     <div>ดึงข้อมูลล่าสุด: ${fmtTime(DATA.generatedAt)}</div>
     <div>พยากรณ์ฝน (Open-Meteo): ${src.rain ? (src.rain.ok ? '✅' : `❌ ${esc(src.rain.error)}`) : '—'}</div>
-    <div>เรดาร์ฝน: RainViewer (โหลดสดในแท็บ "ฝน")</div>`;
+    <div>แม่น้ำเจ้าพระยา (POPNIX): ${src.river ? (src.river.ok ? `✅ ${src.river.count} สถานี` : `❌ ${esc(src.river.error)}`) : '—'}</div>
+    <div>เรดาร์ฝน (RainViewer): ${src.radar ? (src.radar.ok ? '✅ วิเคราะห์ทุกรอบ + โหลดสดในแท็บ "ฝน"' : `❌ ${esc(src.radar.error)}`) : 'โหลดสดในแท็บ "ฝน"'}</div>`;
   updateNotifState();
 }
 
@@ -530,6 +533,7 @@ function switchTab(tab) {
   if (tab === 'map' && DATA) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   if (tab === 'gauge') renderGauge();
   if (tab === 'rain') initRain({ home: DATA?.home || HOME_FALLBACK, calm });
+  if (tab === 'river' && DATA) renderRiver(DATA.river, { stale: STALE_VIEW });
   store.set('tab', tab);
 }
 
