@@ -25,7 +25,9 @@ export function risingRate(history, windowH = T.rateWindowH) {
 
 // สถานะของสถานีเดียว
 // station: { wl, bank, time }, rate: ม./ชม. หรือ null, staleMin: นาที
-export function stationStatus({ wl, bank, time }, rate, staleMin, now = Date.now()) {
+// risingOrange: กฎ "ใกล้ตลิ่ง + กำลังขึ้น = ส้ม" ใช้กับคลองใกล้บ้านเท่านั้น
+//   สถานีไกล (ต้นน้ำ/ทางระบาย) ค่ามักแกว่งตามการเปิด-ปิดเครื่องสูบ → ส้มเฉพาะเมื่อเหลือ < 20 ซม. จริงๆ
+export function stationStatus({ wl, bank, time }, rate, staleMin, now = Date.now(), { risingOrange = true } = {}) {
   if (wl === null || wl === undefined || !time) return { status: 'unknown', reason: 'ไม่มีข้อมูล' };
   const ageMin = (now - time) / 60000;
   if (ageMin > staleMin) return { status: 'stale', reason: `ข้อมูลล่าสุด ${fmtAge(ageMin)} ที่แล้ว` };
@@ -38,7 +40,7 @@ export function stationStatus({ wl, bank, time }, rate, staleMin, now = Date.now
   const rising = rate !== null && rate >= T.risingRate;
   if (margin <= 0) return { status: 'red', reason: 'น้ำถึง/เกินตลิ่ง', margin };
   if (margin < T.orangeMargin) return { status: 'orange', reason: `เหลือ ${cm(margin)} ถึงตลิ่ง`, margin };
-  if (margin < T.watchMargin && rising) return { status: 'orange', reason: `เหลือ ${cm(margin)} และกำลังขึ้น`, margin };
+  if (margin < T.watchMargin && rising && risingOrange) return { status: 'orange', reason: `เหลือ ${cm(margin)} และกำลังขึ้น`, margin };
   if (margin < T.watchMargin) return { status: 'yellow', reason: `เหลือ ${cm(margin)} ถึงตลิ่ง`, margin };
   if (rate !== null && rate >= T.fastRate) return { status: 'yellow', reason: 'น้ำขึ้นเร็ว', margin };
   return { status: 'green', reason: `ต่ำกว่าตลิ่ง ${cm(margin)}`, margin };

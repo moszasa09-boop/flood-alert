@@ -85,3 +85,10 @@ test('POPNIX: จับคู่สถานีด้วยตำแหน่ง
   assert.equal(matchByLocation(list, 13.90121, 100.69049), null); // หนองระแหง: ใกล้สุด 2.8 กม. → ไม่จับคู่
   assert.equal(parsePopTime('2026-10-03 19:35:00'), Date.UTC(2026, 9, 3, 12, 35));
 });
+
+test('สถานีไกล: ใกล้ตลิ่ง+กำลังขึ้น ยังไม่ส้ม (กันค่าแกว่งจากเครื่องสูบ)', () => {
+  // แสนแสบ-บางกะปิ 3 ต.ค.: 0.27 / ตลิ่ง 0.75 ขึ้น 2.3 ซม./ชม.
+  assert.equal(stationStatus(fresh(0.27, 0.75), 0.023, 90, NOW, { risingOrange: false }).status, 'yellow');
+  assert.equal(stationStatus(fresh(0.27, 0.75), 0.023, 90, NOW).status, 'orange'); // คลองใกล้บ้าน: ส้ม
+  assert.equal(stationStatus(fresh(0.6, 0.75), 0, 90, NOW, { risingOrange: false }).status, 'orange'); // < 20 ซม.: ส้มเสมอ
+});

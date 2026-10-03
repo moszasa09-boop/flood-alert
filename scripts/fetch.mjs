@@ -4,7 +4,8 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HOME, NODES, STALE_MIN, HISTORY_HOURS, HEAVY_RAIN_MM } from '../src/config.mjs';
-import { fetchRainDaily } from '../src/sources/openmeteo.mjs';
+import { fetchRainDaily, heavyRainSoon } from '../src/sources/openmeteo.mjs';
+import { decide, sendNtfy } from '../src/notify.mjs';
 import { fetchPopnixAll, fetchPopnixHistory, matchByLocation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
 import { fetchBmaAll, fetchBmaHistory } from '../src/sources/bma.mjs';
 import { fetchThaiwater } from '../src/sources/thaiwater.mjs';
@@ -133,7 +134,7 @@ async function main() {
       const s = index.get(key) || prevStations.get(key) || { key, src: ref.src, id: ref.id, name: ref.name || key, lat: ref.lat, lon: ref.lon, wl: null, time: null };
       const base = s;
       const rate = risingRate(history[key]);
-      const st = stationStatus(base, rate, STALE_MIN[ref.src === 'tw' ? 'thaiwater' : 'bma'], now);
+      const st = stationStatus(base, rate, STALE_MIN[ref.src === 'tw' ? 'thaiwater' : 'bma'], now, { risingOrange: node.role === 'home' });
       return {
         ...base,
         primary: !!ref.primary,
@@ -157,6 +158,27 @@ async function main() {
   const groups = { up: groupOf('up'), home: groupOf('home'), down: groupOf('down') };
   const overall = overallStatus(groups, !!prev?.overall?.candidateRed, rain);
 
+  // แจ้งเตือนเข้ามือถือ (ntfy) — ส่งเฉพาะเมื่อมี NTFY_TOPIC (ตั้งใน GitHub Secrets)
+  const homeNode = nodes.find((n) => n.role === 'home');
+  const homeLive = homeNode.stations.filter((s) => ['green', 'yellow', 'orange', 'red'].includes(s.status));
+  const homeStation = homeLive.find((s) => s.primary) || homeLive[0] || null;
+  const decision = decide(prev?.notify, {
+    status: overall.status,
+    reasons: overall.reasons,
+    home: homeStation,
+    rainSoon: heavyRainSoon(rainDays.hourly, now),
+    rainToday: rainDays[0] ? { mm: rainDays[0].mm, prob: rainDays[0].prob } : null,
+    now,
+  });
+  if (process.env.NOTIFY_TEST) {
+    decision.messages.push({ title: '🔔 ทดสอบแจ้งเตือน', message: `ถ้าเห็นข้อความนี้ แปลว่าแจ้งเตือนใช้ได้\nสถานะตอนนี้: ${overall.status}`, priority: 3, tags: ['bell'] });
+  }
+  const notifyLog = [];
+  for (const msg of decision.messages) {
+    if (!process.env.NTFY_TOPIC) { notifyLog.push(`(ไม่ได้ส่ง ไม่มี NTFY_TOPIC) ${msg.title}`); continue; }
+    try { await sendNtfy(process.env.NTFY_TOPIC, msg); notifyLog.push(`ส่งแล้ว: ${msg.title}`); } catch (err) { notifyLog.push(`ส่งไม่สำเร็จ: ${msg.title} (${err.message})`); }
+  }
+
   const latest = {
     version: 1,
     generatedAt: now,
@@ -165,7 +187,8 @@ async function main() {
     overall: { ...overall, since: prev?.overall?.status === overall.status ? prev.overall.since : now },
     previousStatus: prev?.overall?.status ?? null,
     groups,
-    rain,
+    rain: { ...rain, days: rainDays.map(({ date, mm, prob }) => ({ date, mm, prob })) },
+    notify: decision.state,
     nodes,
   };
   await writeJson(LATEST, latest);
@@ -182,7 +205,8 @@ async function main() {
     }
   }
 
-  if (!sources.bma.ok && !sources.tw.ok) process.exitCode = 2;
+  for (const l of notifyLog) console.log(`  แจ้งเตือน: ${l}`);
+  if (!sources.bma.ok && !sources.tw.ok && !sources.popnix.ok) process.exitCode = 2;
 }
 
 main().catch((err) => {

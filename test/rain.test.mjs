@@ -58,3 +58,12 @@ test('ตัดจุดฝนเดี่ยว แต่เก็บกลุ�
   const grp = denoise((x, y) => (cell.has(`${x},${y}`) ? 2 : 0));
   assert.equal(grp(5, 5), 2);
 });
+
+import { heavyRainSoon } from '../src/sources/openmeteo.mjs';
+test('ฝนหนักใน 3 ชม.', () => {
+  const now = Date.UTC(2026, 9, 3, 5, 30); // 12:30 ไทย
+  const h = (hh, mm, prob) => ({ t: Date.UTC(2026, 9, 3, hh - 7, 0), mm, prob });
+  assert.deepEqual(heavyRainSoon([h(12, 2, 90), h(14, 15, 70)], now), { mm: 15, prob: 70, at: '14:00' });
+  assert.equal(heavyRainSoon([h(14, 15, 40)], now), null);      // โอกาสต่ำ
+  assert.equal(heavyRainSoon([h(17, 30, 90)], now), null);      // เกิน 3 ชม.
+});

@@ -241,3 +241,6 @@ input[type="number"], input[type="text"] {
 .link-grid { display: grid; gap: 8px; }
 .link-grid .btn { justify-content: flex-start; font-weight: 500; }
 .link-grid small { color: var(--muted); font-weight: 400; }
+
+.steps { padding-left: 1.3em; line-height: 1.7; margin: 6px 0; }
+.steps a { color: var(--accent); }
