@@ -150,7 +150,7 @@ function render() {
 
   renderLine();
   renderInfo();
-  if (!$('#tab-river').hidden) renderRiver(DATA.river, { stale: dataStale });
+  if (!$('#tab-river').hidden) renderRiver(DATA.river, { stale: dataStale, home: homeForRiver() });
   if (map || !$('#tab-map').hidden) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   handleAlerts(st, dataStale);
   if (window.gsap && !calm && !render.done) {
@@ -158,6 +158,12 @@ function render() {
     gsap.from('.hero, .chips .chip, .actions, .line-wrap', { y: 18, duration: 0.6, stagger: 0.07, ease: 'power3.out', clearProps: 'transform' });
   }
   render.done = true;
+}
+
+// ข้อมูลบ้านสำหรับแท็บน้ำเหนือ: พิกัด + สถานะรวม + สถานีคลองใกล้บ้านที่ใช้อยู่
+function homeForRiver() {
+  const node = DATA.nodes.find((n) => n.role === 'home');
+  return { lat: DATA.home.lat, lon: DATA.home.lon, status: DATA.overall.status, station: node ? repStation(node) : null };
 }
 
 function showBanner(msg) {
@@ -533,7 +539,7 @@ function switchTab(tab) {
   if (tab === 'map' && DATA) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   if (tab === 'gauge') renderGauge();
   if (tab === 'rain') initRain({ home: DATA?.home || HOME_FALLBACK, calm });
-  if (tab === 'river' && DATA) renderRiver(DATA.river, { stale: STALE_VIEW });
+  if (tab === 'river' && DATA) renderRiver(DATA.river, { stale: STALE_VIEW, home: homeForRiver() });
   store.set('tab', tab);
 }
 

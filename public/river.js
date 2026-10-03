@@ -5,7 +5,15 @@ const fmtTime = (t) => new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Ban
 const n0 = (v) => Math.round(v).toLocaleString('en-US');
 const TREND = { up: '▲', down: '▼', flat: '–' };
 
-export function renderRiver(river, { stale = false } = {}) {
+// ระยะทาง (กม.) ระหว่างสองพิกัด
+const km = (a, b, c, d) => {
+  const r = (x) => (x * Math.PI) / 180;
+  const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+};
+
+// home: { lat, lon, status, station: { name, wl, bank } } — แสดง 🏠 ตรงระดับละติจูดของบ้าน
+export function renderRiver(river, { stale = false, home = null } = {}) {
   const box = document.querySelector('#river-body');
   if (!river?.stations?.length) {
     box.innerHTML = '<div class="glass card"><p class="muted">ยังไม่มีข้อมูลแม่น้ำ — ลองใหม่ภายหลัง</p></div>';
@@ -45,6 +53,19 @@ export function renderRiver(river, { stale = false } = {}) {
     rows.push({ s, i, y });
     y += GAP;
   });
+  // 🏠 บ้าน: แทรกหลังสถานีสุดท้ายที่อยู่เหนือบ้าน (ละติจูดมากกว่า) — แม่น้ำไหลจากเหนือลงใต้
+  let homeRow = null;
+  if (home?.lat != null) {
+    const north = rows.filter((r) => r.s && r.s.lat != null && r.s.lat > home.lat);
+    const after = north.at(-1);
+    if (after) {
+      const nearest = st.filter((s) => s.lat != null).reduce((a, s) => (km(home.lat, home.lon, s.lat, s.lon) < km(home.lat, home.lon, a.lat, a.lon) ? s : a));
+      const shift = 64;
+      for (const r of rows) if (r.y > after.y) r.y += shift;
+      y += shift;
+      homeRow = { y: after.y + GAP / 2 + shift / 2 + 4, distKm: km(home.lat, home.lon, nearest.lat, nearest.lon), nearest };
+    }
+  }
   const endY = y + 4;
   const H = endY + 40;
   const pts = rows.filter((r) => r.s);
@@ -76,6 +97,20 @@ export function renderRiver(river, { stale = false } = {}) {
     if (extra) svg += `<text class="rv-sub" x="${W - 6}" y="${r.y + 13}" text-anchor="end">${esc(extra)}</text>`;
     if (isFront && !stale) svg += `<text class="rv-front" x="${W - 6}" y="${r.y - 4}" text-anchor="end">🌊 ล้นถึงตรงนี้</text>`;
   });
+  if (homeRow) {
+    const hc = COLORS[stale ? 'stale' : home.status] || COLORS.unknown;
+    const HX = X + 40;
+    const hs = home.station;
+    const canal = hs?.wl != null && hs?.bank != null
+      ? `คลองใกล้บ้าน ${hs.wl.toFixed(2)} ม. · ${hs.wl >= hs.bank ? `เกินตลิ่ง ${Math.round((hs.wl - hs.bank) * 100)}` : `ต่ำกว่าตลิ่ง ${Math.round((hs.bank - hs.wl) * 100)}`} ซม.`
+      : 'คลองใกล้บ้าน: ไม่มีข้อมูล';
+    svg += `<line x1="${X}" y1="${homeRow.y}" x2="${HX - 16}" y2="${homeRow.y}" stroke="${hc}" stroke-width="2" stroke-dasharray="4 4"/>`;
+    svg += `<circle cx="${HX}" cy="${homeRow.y}" r="15" fill="#0a1630" stroke="${hc}" stroke-width="3" filter="url(#rglow)"/>`;
+    svg += `<text x="${HX}" y="${homeRow.y + 6}" text-anchor="middle" font-size="16">🏠</text>`;
+    svg += `<text class="rv-home" x="${HX + 24}" y="${homeRow.y - 12}" fill="${hc}">บ้านเรา (อยู่ระดับเดียวกับช่วงนี้)</text>`;
+    svg += `<text class="rv-sub" x="${HX + 24}" y="${homeRow.y + 4}">ห่างแม่น้ำไปทางตะวันออก ~${Math.round(homeRow.distKm)} กม.</text>`;
+    svg += `<text class="rv-sub" x="${HX + 24}" y="${homeRow.y + 19}">${esc(canal)}</text>`;
+  }
   svg += `<circle cx="${X}" cy="${endY}" r="7" fill="none" stroke="#39c6ff" stroke-width="2"/><text class="rv-name" x="${X + 26}" y="${endY + 5}">🌊 อ่าวไทย</text>`;
 
   box.innerHTML = `
