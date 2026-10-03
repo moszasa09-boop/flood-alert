@@ -7,7 +7,7 @@ import { HOME, NODES, STALE_MIN, HISTORY_HOURS, HEAVY_RAIN_MM, SOURCES } from '.
 import { fetchRainDaily, rainWindowAhead } from '../src/sources/openmeteo.mjs';
 import { fetchRiver } from '../src/sources/river.mjs';
 import { fetchRadarNow } from '../src/sources/radar.mjs';
-import { decide, sendNtfy } from '../src/notify.mjs';
+import { decide, deliver } from '../src/notify.mjs';
 import { fetchPopnixAll, fetchPopnixHistory, matchByLocation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
 import { fetchBmaAll, fetchBmaHistory } from '../src/sources/bma.mjs';
 import { fetchThaiwater } from '../src/sources/thaiwater.mjs';
@@ -173,7 +173,10 @@ async function main() {
     return w === 'unknown' ? 'stale' : w;
   };
   const groups = { up: groupOf('up'), home: groupOf('home'), down: groupOf('down') };
-  const overall = overallStatus(groups, !!prev?.overall?.candidateRed, rain);
+  // เวลาวัดล่าสุดของสถานีบ้านที่เป็นแดง (ใช้ยืนยันแดงด้วยค่าวัดใหม่)
+  const homeRed = nodes.filter((n) => n.role === 'home').flatMap((n) => n.stations).filter((s) => s.status === 'red');
+  const homeRedTime = homeRed.length ? Math.max(...homeRed.map((s) => s.time)) : null;
+  const overall = overallStatus(groups, { candidateRedAt: prev?.overall?.candidateRedAt ?? null }, rain, homeRedTime);
 
   // แจ้งเตือนเข้ามือถือ (ntfy) — ส่งเฉพาะเมื่อมี NTFY_TOPIC (ตั้งใน GitHub Secrets)
   const homeNode = nodes.find((n) => n.role === 'home');
@@ -202,10 +205,14 @@ async function main() {
   if (process.env.NOTIFY_TEST) {
     decision.messages.push({ title: '🔔 ทดสอบแจ้งเตือน', message: `ถ้าเห็นข้อความนี้ แปลว่าแจ้งเตือนใช้ได้\nสถานะตอนนี้: ${overall.status}`, priority: 3, tags: ['bell'] });
   }
-  const notifyLog = [];
-  for (const msg of decision.messages) {
-    if (!process.env.NTFY_TOPIC) { notifyLog.push(`(ไม่ได้ส่ง ไม่มี NTFY_TOPIC) ${msg.title}`); continue; }
-    try { await sendNtfy(process.env.NTFY_TOPIC, msg); notifyLog.push(`ส่งแล้ว: ${msg.title}`); } catch (err) { notifyLog.push(`ส่งไม่สำเร็จ: ${msg.title} (${err.message})`); }
+  let notifyLog = [];
+  if (process.env.NTFY_TOPIC) {
+    const d = await deliver(process.env.NTFY_TOPIC, decision.messages, prev?.notify?.outbox || [], now);
+    notifyLog = d.log;
+    decision.state.outbox = d.outbox; // ส่งไม่ได้ → เก็บไว้ส่งรอบหน้า
+  } else {
+    notifyLog = decision.messages.map((m) => `(ไม่ได้ส่ง ไม่มี NTFY_TOPIC) ${m.title}`);
+    decision.state.outbox = [];
   }
 
   const latest = {
@@ -237,7 +244,8 @@ async function main() {
   }
 
   for (const l of notifyLog) console.log(`  แจ้งเตือน: ${l}`);
-  if (!sources.bma.ok && !sources.tw.ok && !sources.popnix.ok) process.exitCode = 2;
+  // แหล่งข้อมูลล่ม ≠ โปรแกรมพัง: ต้องจบแบบปกติเพื่อให้เว็บอัปเดต (แสดง "ข้อมูลไม่พอ") และบันทึกสถานะการแจ้งเตือน
+  if (!sources.bma.ok && !sources.tw.ok && !sources.popnix.ok) console.warn('  ⚠️ แหล่งข้อมูลระดับน้ำล่มทั้งหมด — เผยแพร่สถานะ "ข้อมูลไม่พอ" ต่อ');
 }
 
 main().catch((err) => {

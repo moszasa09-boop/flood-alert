@@ -508,6 +508,18 @@ function updateNotifState() {
   el.textContent = { granted: '✅ อนุญาตแล้ว', denied: '❌ ถูกปิดไว้ — เปิดได้ในการตั้งค่าเบราว์เซอร์/มือถือ', default: 'ยังไม่ได้อนุญาต' }[Notification.permission];
 }
 
+// เรียกทุก 1 นาที: ถ้ายังแดงและยังไม่กดรับทราบ และเตือนครั้งล่าสุดนานเกิน 15 นาที → เตือนซ้ำ
+function redRepeatDue(now, lastAt, intervalMs = RED_REPEAT_MS) {
+  return lastAt != null && now - lastAt >= intervalMs;
+}
+function redRepeatTick() {
+  if (!DATA || $('#ack-bar').hidden) return;
+  if (!redRepeatDue(Date.now(), store.get('redRepeatAt', null))) return;
+  store.set('redRepeatAt', Date.now());
+  notify('🔴 น้ำกำลังมา (เตือนซ้ำ)', DATA.overall.reasons.join(' · '), 'red');
+  if (navigator.vibrate && !calm) navigator.vibrate([400, 150, 400]);
+}
+
 function handleAlerts(st, dataStale) {
   if (!DATA) return;
   const lastSeen = store.get('lastStatus', null);
@@ -520,16 +532,12 @@ function handleAlerts(st, dataStale) {
   store.set('lastStatus', key);
 
   // แดง: เตือนซ้ำทุก 15 นาทีจนกว่าจะกดรับทราบ
+  // เวลาเตือนล่าสุดเก็บใน localStorage แล้วเช็กทุก 1 นาที (redRepeatTick) — การรีเฟรชข้อมูลทุก 5 นาทีจึงไม่ทำให้นับใหม่
   const acked = store.get('ackSince', null) === DATA.overall.since;
   const showAck = st === 'red' && !acked;
   $('#ack-bar').hidden = !showAck;
-  clearInterval(handleAlerts.timer);
-  if (showAck) {
-    handleAlerts.timer = setInterval(() => {
-      notify('🔴 น้ำกำลังมา (เตือนซ้ำ)', DATA.overall.reasons.join(' · '), 'red');
-      if (navigator.vibrate && !calm) navigator.vibrate([400, 150, 400]);
-    }, RED_REPEAT_MS);
-  }
+  if (showAck && !store.get('redRepeatAt', null)) store.set('redRepeatAt', Date.now()); // ครั้งแรกนับเป็นการเตือนแล้ว
+  if (!showAck) store.set('redRepeatAt', null);
 }
 
 /* ---------------- เริ่มต้น ---------------- */
@@ -550,7 +558,7 @@ function bind() {
   addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
   $('#ack-btn').addEventListener('click', () => {
     store.set('ackSince', DATA.overall.since);
-    clearInterval(handleAlerts.timer);
+    store.set('redRepeatAt', null);
     $('#ack-bar').hidden = true;
   });
   $('#calm-toggle').addEventListener('change', (e) => {
@@ -593,6 +601,7 @@ async function init() {
   startBg();
   await load();
   setInterval(load, REFRESH_MS);
+  setInterval(redRepeatTick, 60 * 1000);
 }
 
 init();

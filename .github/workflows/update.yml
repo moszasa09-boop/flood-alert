@@ -48,3 +48,12 @@ jobs:
           path: public
       - id: deploy
         uses: actions/deploy-pages@v4
+      - name: Alert on failure
+        if: failure()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] || exit 0
+          curl -s -m 20 -X POST https://ntfy.sh -H 'Content-Type: application/json' \
+            -d "{\"topic\":\"$NTFY_TOPIC\",\"title\":\"⚠️ ระบบเตือนน้ำท่วมขัดข้อง\",\"message\":\"รอบอัปเดตล่าสุดทำงานไม่สำเร็จ ข้อมูลบนเว็บอาจค้าง — ช่วยดูคลองเองและแจ้งคนดูแลระบบ\",\"priority\":4,\"tags\":[\"warning\"],\"click\":\"$RUN_URL\"}" || true

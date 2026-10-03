@@ -37,12 +37,17 @@ export function risingRate(history, windowH = T.rateWindowH) {
 //   สถานีไกล (ต้นน้ำ/ทางระบาย) ค่ามักแกว่งตามการเปิด-ปิดเครื่องสูบ → ส้มเฉพาะเมื่อเหลือ < 20 ซม. จริงๆ
 export function stationStatus({ wl, bank, time }, rate, staleMin, now = Date.now(), { risingOrange = true } = {}) {
   if (wl === null || wl === undefined || !time) return { status: 'unknown', reason: 'ไม่มีข้อมูล' };
+  // ข้อมูลผิดรูปแบบ (ไม่ใช่ตัวเลข / ค่าเพี้ยนเกินจริง / เวลาในอนาคต) → ไม่นำมาตัดสิน ห้ามตกไปเป็นเขียว
+  if (!Number.isFinite(wl) || Math.abs(wl) > 100 || !Number.isFinite(time) || time > now + 30 * 60000) {
+    return { status: 'unknown', reason: 'ข้อมูลผิดรูปแบบ — ไม่นำมาตัดสิน' };
+  }
+  if (rate !== null && !Number.isFinite(rate)) rate = null;
   const ageMin = (now - time) / 60000;
   if (ageMin > staleMin) return { status: 'stale', reason: `ข้อมูลล่าสุด ${fmtAge(ageMin)} ที่แล้ว` };
-  if (bank === null || bank === undefined) {
-    // ไม่รู้ระดับตลิ่ง → ดูได้แค่ความเร็วน้ำขึ้น
+  if (bank === null || bank === undefined || !Number.isFinite(bank)) {
+    // ไม่รู้ระดับตลิ่ง → บอกไม่ได้ว่าปลอดภัย: ไม่นำมาตัดสิน (ยกเว้นน้ำขึ้นเร็ว = เหลือง)
     if (rate !== null && rate >= T.fastRate) return { status: 'yellow', reason: 'น้ำขึ้นเร็ว (ไม่ทราบระดับตลิ่ง)' };
-    return { status: 'green', reason: 'ไม่ทราบระดับตลิ่ง', noBank: true };
+    return { status: 'unknown', reason: 'ไม่ทราบระดับตลิ่ง — ไม่นำมาตัดสิน', noBank: true };
   }
   const margin = Math.round((bank - wl) * 100) / 100; // ปัดเป็น ซม. กันปัญหาทศนิยม (1.5-1.3=0.1999…)
   const rising = rate !== null && rate >= T.risingRate;
@@ -55,9 +60,11 @@ export function stationStatus({ wl, bank, time }, rate, staleMin, now = Date.now
 }
 
 // สถานะรวมของบ้าน จากสถานะแต่ละกลุ่ม (up / home / down)
-// prevCandidateRed: รอบก่อนหน้าก็เป็นแดงหรือไม่ (กันเตือนแดงผิดจากค่าผิดปกติครั้งเดียว)
+// แดงต้องยืนยันด้วย "ค่าวัดใหม่" — ไม่ใช่แค่รันซ้ำแล้วได้ค่าเดิม
+//   prev.candidateRedAt: เวลาวัดของค่าแรกที่เห็นแดง (เก็บจากรอบก่อน)
+//   homeRedTime: เวลาวัดล่าสุดของสถานีบ้านที่เป็นแดงในรอบนี้
 // rain: { heavy: bool, mm, date } จากพยากรณ์ฝน 2 วัน (ไม่บังคับ)
-export function overallStatus({ up, home, down }, prevCandidateRed = false, rain = null) {
+export function overallStatus({ up, home, down }, prev = {}, rain = null, homeRedTime = null) {
   const reasons = [];
   let status = 'green';
   const bump = (s, why) => {
@@ -69,16 +76,17 @@ export function overallStatus({ up, home, down }, prevCandidateRed = false, rain
     // ไม่มีข้อมูลคลองใกล้บ้าน → ไม่ฟันธงว่าปลอดภัย
     return {
       status: 'unknown',
-      candidateRed: false,
+      candidateRedAt: null,
       reasons: ['ดึงข้อมูลคลองใกล้บ้านไม่ได้ — ช่วยดูคลองหนองระแหงด้วยตาเอง'],
     };
   }
 
-  let candidateRed = false;
+  let candidateRedAt = null;
   if (home === 'red') {
-    candidateRed = true;
-    if (prevCandidateRed) bump('red', 'คลองใกล้บ้านถึงตลิ่ง');
-    else bump('orange', 'คลองใกล้บ้านถึงตลิ่ง (รอยืนยันรอบถัดไป)');
+    const first = prev?.candidateRedAt ?? null;
+    candidateRedAt = first ?? homeRedTime;
+    if (first != null && homeRedTime != null && homeRedTime > first) bump('red', 'คลองใกล้บ้านถึงตลิ่ง');
+    else bump('orange', 'คลองใกล้บ้านถึงตลิ่ง (รอยืนยันจากค่าวัดถัดไป)');
   } else if (home === 'orange') bump('orange', 'คลองใกล้บ้านใกล้ตลิ่ง');
   else if (home === 'yellow') bump('yellow', 'คลองใกล้บ้านสูงกว่าปกติ');
 
@@ -90,7 +98,7 @@ export function overallStatus({ up, home, down }, prevCandidateRed = false, rain
   if (rain?.heavy) bump('yellow', `พยากรณ์ฝนหนัก ${Math.round(rain.mm)} มม.`);
 
   if (!reasons.length) reasons.push('คลองทุกจุดยังต่ำกว่าตลิ่ง');
-  return { status, candidateRed, reasons };
+  return { status, candidateRedAt, reasons };
 }
 
 const cm = (m) => `${Math.round(m * 100)} ซม.`;

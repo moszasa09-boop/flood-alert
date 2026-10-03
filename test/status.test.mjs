@@ -34,11 +34,16 @@ test('สถานะรวม', () => {
   assert.equal(overallStatus({ up: 'green', home: 'green', down: 'green' }).status, 'green');
   assert.equal(overallStatus({ up: 'orange', home: 'green', down: 'green' }).status, 'yellow');
   assert.equal(overallStatus({ up: 'orange', home: 'green', down: 'red' }).status, 'orange');
-  // แดงต้องเห็นติดกัน 2 รอบ
-  const first = overallStatus({ up: 'green', home: 'red', down: 'green' }, false);
+  // แดงต้องยืนยันด้วยค่าวัดใหม่
+  const g = { up: 'green', home: 'red', down: 'green' };
+  const first = overallStatus(g, {}, null, 1000);
   assert.equal(first.status, 'orange');
-  assert.equal(first.candidateRed, true);
-  assert.equal(overallStatus({ up: 'green', home: 'red', down: 'green' }, true).status, 'red');
+  assert.equal(first.candidateRedAt, 1000);
+  assert.equal(overallStatus(g, { candidateRedAt: 1000 }, null, 1000).status, 'orange'); // ค่าเดิม → ยังไม่ยืนยัน
+  const second = overallStatus(g, { candidateRedAt: 1000 }, null, 1600);                   // ค่าใหม่ → แดง
+  assert.equal(second.status, 'red');
+  assert.equal(overallStatus(g, { candidateRedAt: second.candidateRedAt }, null, 1600).status, 'red'); // รันซ้ำค่าเดิมหลังยืนยัน → ยังแดง
+  assert.equal(overallStatus({ ...g, home: 'yellow' }, { candidateRedAt: 1000 }, null, null).candidateRedAt, null);
   // ไม่มีข้อมูลบ้าน = unknown ไม่ใช่เขียว
   assert.equal(overallStatus({ up: 'green', home: 'stale', down: 'green' }).status, 'unknown');
 });
@@ -104,4 +109,15 @@ test('อัตราขึ้น-ลง: ค่ากระโดดครั�
   // ขึ้นจริงต่อเนื่อง ยังจับได้
   const up = h.map(([t], i) => [t, 1.0 + i * 0.005]);
   assert.ok(Math.abs(risingRate(up) - 0.06) < 0.01);
+});
+
+test('ข้อมูลผิดรูปแบบ/ไม่รู้ตลิ่ง → ไม่ขึ้นเขียว', () => {
+  assert.equal(stationStatus({ wl: NaN, bank: 2, time: NOW }, 0, 90, NOW).status, 'unknown');
+  assert.equal(stationStatus({ wl: 1.2, bank: NaN, time: NOW }, 0, 90, NOW).status, 'unknown');
+  assert.equal(stationStatus({ wl: 1.2, bank: null, time: NOW }, 0, 90, NOW).status, 'unknown');
+  assert.equal(stationStatus({ wl: 999, bank: 2, time: NOW }, 0, 90, NOW).status, 'unknown');
+  assert.equal(stationStatus({ wl: 1.2, bank: 2, time: NOW + 3 * 3600e3 }, 0, 90, NOW).status, 'unknown'); // เวลาในอนาคต
+  assert.equal(stationStatus({ wl: 1.2, bank: null, time: NOW }, 0.08, 90, NOW).status, 'yellow');       // ไม่รู้ตลิ่งแต่ขึ้นเร็ว
+  // บ้านไม่มีข้อมูลที่ใช้ได้ → สถานะรวม unknown ไม่ใช่เขียว
+  assert.equal(overallStatus({ up: 'green', home: 'unknown', down: 'green' }).status, 'unknown');
 });

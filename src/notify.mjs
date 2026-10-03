@@ -230,12 +230,41 @@ function riverAlerts(s, msgs, river) {
 }
 
 // ส่งผ่าน ntfy (topic เก็บเป็นความลับใน GitHub Secrets — ใครรู้ชื่อ topic ก็รับแจ้งเตือนได้)
-export async function sendNtfy(topic, msg) {
-  const res = await fetch('https://ntfy.sh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topic, click: SITE_URL, ...msg }),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!res.ok) throw new Error(`ntfy HTTP ${res.status}`);
+// ลองใหม่สูงสุด 3 ครั้ง (เว้น 2, 4 วินาที) ถ้ายังไม่ได้ throw ให้ผู้เรียกเก็บเข้าคิวส่งรอบหน้า
+export async function sendNtfy(topic, msg, { tries = 3, fetchImpl = fetch, waitMs = 2000 } = {}) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetchImpl('https://ntfy.sh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, click: SITE_URL, ...msg }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (res.ok) return;
+      last = new Error(`ntfy HTTP ${res.status}`);
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) break; // ผิดถาวร ไม่ต้องลองซ้ำ
+    } catch (err) { last = err; }
+    if (i < tries - 1) await new Promise((r) => setTimeout(r, waitMs * (i + 1)));
+  }
+  throw last;
+}
+
+// ส่งข้อความรอบนี้ + ข้อความค้างจากรอบก่อน (outbox) — ส่งไม่ได้เก็บไว้ลองรอบหน้า ไม่เกิน 3 ชม.
+const OUTBOX_MAX_AGE = 3 * 3600e3;
+export async function deliver(topic, messages, outbox = [], now = Date.now(), send = sendNtfy) {
+  const queue = [
+    ...outbox.filter((o) => now - o.at <= OUTBOX_MAX_AGE).map((o) => ({ ...o, retry: true })),
+    ...messages.map((msg) => ({ msg, at: now, retry: false })),
+  ];
+  const log = [];
+  const pending = [];
+  for (const item of queue) {
+    const msg = item.retry ? { ...item.msg, title: `(ส่งซ้ำ) ${item.msg.title}` } : item.msg;
+    try { await send(topic, msg); log.push(`ส่งแล้ว: ${msg.title}`); }
+    catch (err) { pending.push({ msg: item.msg, at: item.at }); log.push(`ส่งไม่สำเร็จ (จะลองรอบหน้า): ${msg.title} (${err.message})`); }
+  }
+  const dropped = outbox.length - outbox.filter((o) => now - o.at <= OUTBOX_MAX_AGE).length;
+  if (dropped) log.push(`ทิ้งข้อความค้างเกิน 3 ชม. ${dropped} ข้อความ`);
+  return { log, outbox: pending };
 }

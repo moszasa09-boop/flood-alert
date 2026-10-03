@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, homeLine } from '../src/notify.mjs';
+import { decide, homeLine, deliver, sendNtfy } from '../src/notify.mjs';
 
 // 10:00 เวลาไทย (ไม่ชนสรุปเช้า)
 const T0 = Date.UTC(2026, 9, 3, 3, 0);
@@ -120,4 +120,27 @@ test('แดงกำลังลดระดับ: ไม่ส่ง "น้�
   assert.equal(r.messages.length, 0);
   r = run(r.state, 'yellow', 30); // ยืนยัน
   assert.match(r.messages[0].title, /ลดระดับ/);
+});
+
+test('ส่งแจ้งเตือน: ลองใหม่เมื่อล้มเหลวชั่วคราว', async () => {
+  let calls = 0;
+  const flaky = async () => { calls++; return calls < 3 ? { ok: false, status: 503 } : { ok: true, status: 200 }; };
+  await sendNtfy('t', { title: 'x' }, { fetchImpl: flaky, waitMs: 1 });
+  assert.equal(calls, 3);
+  let c2 = 0;
+  await assert.rejects(sendNtfy('t', { title: 'x' }, { fetchImpl: async () => { c2++; return { ok: false, status: 400 }; }, waitMs: 1 }));
+  assert.equal(c2, 1); // 400 = ผิดถาวร ไม่ลองซ้ำ
+});
+
+test('ส่งไม่ได้ → เก็บเข้าคิว แล้วส่งซ้ำรอบหน้า (ไม่เกิน 3 ชม.)', async () => {
+  const fail = async () => { throw new Error('network'); };
+  const ok = async () => {};
+  const r1 = await deliver('t', [{ title: '🔴 น้ำกำลังมา' }], [], min(0), fail);
+  assert.equal(r1.outbox.length, 1);
+  const sent = [];
+  const r2 = await deliver('t', [{ title: 'ใหม่' }], r1.outbox, min(15), async (_, m) => sent.push(m.title));
+  assert.deepEqual(sent, ['(ส่งซ้ำ) 🔴 น้ำกำลังมา', 'ใหม่']);
+  assert.equal(r2.outbox.length, 0);
+  const r3 = await deliver('t', [], r1.outbox, min(200), ok); // ค้างเกิน 3 ชม. → ทิ้ง
+  assert.match(r3.log.join(), /ทิ้งข้อความค้าง/);
 });
