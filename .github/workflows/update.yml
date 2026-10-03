@@ -1,0 +1,43 @@
+# ดึงข้อมูลระดับน้ำทุก 15 นาที แล้วขึ้นเว็บ GitHub Pages
+name: update
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'   # GitHub อาจช้ากว่ากำหนดได้บ้างช่วงคนใช้เยอะ
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test
+        run: npm test
+      - name: Fetch water levels
+        env:
+          SEED_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: npm run fetch
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deploy
+        uses: actions/deploy-pages@v4

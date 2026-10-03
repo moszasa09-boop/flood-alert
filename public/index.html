@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>เตือนภัยน้ำท่วม</title>
+  <meta name="description" content="ระบบเตือนภัยน้ำท่วม เขตคลองสามวา กทม.">
+  <meta name="theme-color" content="#050b1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="น้ำท่วม">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;700&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="bg" aria-hidden="true"></canvas>
+
+  <div id="stale-banner" class="banner" hidden></div>
+
+  <main id="app">
+    <!-- สถานะรวม: ต้องเห็นชัดใน 1 วินาที -->
+    <section id="hero" class="hero glass" data-status="unknown" aria-live="polite">
+      <div class="hero-ring"><div class="hero-dot"></div></div>
+      <div class="hero-text">
+        <div class="hero-label" id="hero-label">กำลังโหลด…</div>
+        <div class="hero-reason" id="hero-reason"></div>
+      </div>
+    </section>
+
+    <div class="chips" id="chips">
+      <div class="chip" data-g="up"><span class="chip-dot"></span><span>น้ำเหนือ</span></div>
+      <div class="chip" data-g="home"><span class="chip-dot"></span><span>ใกล้บ้าน</span></div>
+      <div class="chip" data-g="down"><span class="chip-dot"></span><span>ทางระบายใต้</span></div>
+    </div>
+
+    <div id="ack-bar" class="ack glass" hidden>
+      <span>🔴 แจ้งเตือนซ้ำทุก 15 นาที</span>
+      <button id="ack-btn" class="btn btn-red">รับทราบ</button>
+    </div>
+
+    <!-- แท็บ: แผนผัง -->
+    <section class="tab" id="tab-line">
+      <div class="actions glass" id="actions"></div>
+      <div class="line-wrap glass">
+        <div class="line-head">
+          <span>สายน้ำ ↓ จากต้นน้ำสู่ทะเล</span>
+          <span class="updated" id="updated"></span>
+        </div>
+        <div id="line" class="line"></div>
+      </div>
+    </section>
+
+    <!-- แท็บ: ฝน -->
+    <section class="tab" id="tab-rain" hidden>
+      <div id="rain-now" class="rain-now glass" data-level="x">
+        <div class="rain-now-title" id="rain-now-title">กำลังโหลดเรดาร์…</div>
+        <div class="rain-now-detail" id="rain-now-detail"></div>
+        <div class="rain-now-time" id="rain-now-time"></div>
+      </div>
+
+      <div class="glass radar-card">
+        <div id="radar-map" class="radar-map"></div>
+        <div class="radar-ctrl">
+          <button id="radar-play" class="btn radar-btn" aria-label="เล่น">▶</button>
+          <input type="range" id="radar-slider" min="0" max="12" value="12" aria-label="เลือกเวลาภาพเรดาร์">
+          <span id="radar-time" class="radar-time">--:--</span>
+        </div>
+        <div class="radar-legend">
+          <span><i style="--c:#88ddee"></i>เบา</span><span><i style="--c:#0077aa"></i>ปานกลาง</span>
+          <span><i style="--c:#ffaa00"></i>หนัก</span><span><i style="--c:#ff2050"></i>หนักมาก</span>
+        </div>
+        <p class="muted small">ภาพฝนที่ตกจริงย้อนหลัง 2 ชม. ทุก 10 นาที (ช้ากว่าจริง ~10 นาที · ละเอียด ~1 กม.) · วงประ = 10 / 25 / 50 กม. จากบ้าน</p>
+      </div>
+
+      <div class="glass card">
+        <h2>พยากรณ์ฝน</h2>
+        <p id="fc-summary" class="fc-summary">กำลังโหลด…</p>
+        <h3 class="muted">3 ชม. ข้างหน้า (ทุก 15 นาที)</h3>
+        <div id="fc-15" class="fc15-row"></div>
+        <div id="fc-days" class="fc-days"></div>
+        <div class="fc-chart-box"><canvas id="fc-chart"></canvas></div>
+        <p class="muted small">พยากรณ์จากแบบจำลองอากาศ (Open-Meteo) เป็นการคาดการณ์ <b>ไม่แน่นอน 100%</b> ·
+          ใช้คู่กับเรดาร์ด้านบนซึ่งเป็นฝนที่ตกจริง</p>
+      </div>
+
+      <div class="glass card">
+        <h2>เรดาร์ทางการ (ละเอียดกว่า)</h2>
+        <div class="link-grid">
+          <a class="btn btn-ghost" href="https://weather.bangkok.go.th/radar/RadarNongchok.aspx" target="_blank" rel="noopener">📡 เรดาร์หนองจอก กทม. <small>(~15 กม. จากบ้าน)</small></a>
+          <a class="btn btn-ghost" href="https://weather.bangkok.go.th/radar/RadarAnimation.aspx" target="_blank" rel="noopener">🎞️ ภาพเคลื่อนไหว กทม.</a>
+          <a class="btn btn-ghost" href="https://weather.bangkok.go.th/radar/RadarNongkam.aspx" target="_blank" rel="noopener">📡 เรดาร์หนองแขม กทม.</a>
+          <a class="btn btn-ghost" href="https://weather.tmd.go.th/" target="_blank" rel="noopener">🌦️ เรดาร์กรมอุตุฯ</a>
+          <a class="btn btn-ghost" href="https://www.tmd.go.th/forecast/daily" target="_blank" rel="noopener">📋 พยากรณ์กรมอุตุฯ</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- แท็บ: แผนที่ -->
+    <section class="tab" id="tab-map" hidden>
+      <div id="map" class="map glass"></div>
+      <p class="hint">วงกลม = สถานีวัดน้ำ (สีตามสถานะ) · 🏠 = บ้าน · แตะวงกลมเพื่อดูค่า</p>
+    </section>
+
+    <!-- แท็บ: ไม้วัด -->
+    <section class="tab" id="tab-gauge" hidden>
+      <div class="glass card">
+        <h2>บันทึกไม้วัด คลองหนองระแหง</h2>
+        <p class="muted">อ่านค่าจากไม้วัด/ขีดสีที่ตลิ่ง แล้วบันทึกไว้เทียบกับสถานีทางการ</p>
+        <form id="gauge-form" class="gauge-form">
+          <label>ระดับน้ำ (ซม. จากขีดอ้างอิง)
+            <input type="number" id="g-value" inputmode="decimal" step="1" required>
+          </label>
+          <label>หมายเหตุ
+            <input type="text" id="g-note" maxlength="80" placeholder="เช่น น้ำขุ่น ไหลแรง">
+          </label>
+          <button class="btn" type="submit">บันทึก</button>
+        </form>
+        <p class="muted small">⚠️ ตอนนี้เก็บในเครื่องนี้เท่านั้น (เครื่องอื่นในบ้านจะไม่เห็น)</p>
+      </div>
+      <div class="glass card">
+        <h3>ประวัติที่บันทึก</h3>
+        <div id="gauge-list" class="gauge-list"></div>
+      </div>
+    </section>
+
+    <!-- แท็บ: ข้อมูล / ตั้งค่า -->
+    <section class="tab" id="tab-info" hidden>
+      <div class="glass card">
+        <h2>เบอร์ฉุกเฉิน</h2>
+        <div class="tel-grid">
+          <a class="btn tel" href="tel:1555">📞 กทม. 1555</a>
+          <a class="btn tel" href="tel:1784">📞 ปภ. 1784</a>
+        </div>
+        <p class="muted small">แจ้งน้ำท่วมถนน/ท่อตัน: แอป Traffy Fondue</p>
+      </div>
+      <div class="glass card">
+        <h2>การแจ้งเตือน</h2>
+        <p class="muted" id="notif-state"></p>
+        <div class="row">
+          <button class="btn" id="notif-enable">อนุญาตการแจ้งเตือน</button>
+          <button class="btn btn-ghost" id="notif-test">ทดสอบแจ้งเตือน</button>
+        </div>
+        <p class="muted small">ตอนนี้แจ้งเตือนได้<b>เฉพาะตอนเปิดแอปไว้</b> (แอปเช็กข้อมูลใหม่ทุก 5 นาที) ·
+          การแจ้งเตือนแม้ปิดแอปจะเปิดใช้เมื่อขึ้นระบบบนอินเทอร์เน็ต</p>
+      </div>
+      <div class="glass card">
+        <h2>ความหมายของสี</h2>
+        <div id="legend"></div>
+      </div>
+      <div class="glass card">
+        <h2>แหล่งข้อมูล</h2>
+        <div id="sources" class="muted small"></div>
+        <p class="muted small">ระดับน้ำทั้งหมดเป็น ม.รทก. · "ตลิ่ง" ใช้ฝั่งที่ต่ำกว่า ·
+          สถานีประตูน้ำใช้น้ำด้านในเทียบตลิ่ง · สถานะเป็นการประเมินจากข้อมูลทางการ
+          <b>ไม่ใช่ประกาศทางการ</b> — ดูน้ำจริงหน้าบ้านประกอบเสมอ</p>
+      </div>
+      <div class="glass card">
+        <h2>การแสดงผล</h2>
+        <label class="switch"><input type="checkbox" id="calm-toggle"> โหมดลดอนิเมชัน (ประหยัดแบต)</label>
+      </div>
+    </section>
+  </main>
+
+  <!-- การ์ดรายละเอียดคลอง -->
+  <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+  <section id="sheet" class="sheet glass" hidden aria-modal="true" role="dialog">
+    <button class="sheet-close" id="sheet-close" aria-label="ปิด">✕</button>
+    <div id="sheet-body"></div>
+  </section>
+
+  <nav class="tabbar glass" id="tabbar">
+    <button data-tab="line" class="active"><span>〰️</span>แผนผัง</button>
+    <button data-tab="rain"><span>🌧️</span>ฝน</button>
+    <button data-tab="map"><span>🗺️</span>แผนที่</button>
+    <button data-tab="gauge"><span>📏</span>ไม้วัด</button>
+    <button data-tab="info"><span>ℹ️</span>ข้อมูล</button>
+  </nav>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
