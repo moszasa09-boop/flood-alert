@@ -40,6 +40,8 @@
       <div class="chip" data-g="down"><span class="chip-dot"></span><span>ทางระบายใต้</span></div>
     </div>
 
+    <div id="rain-count" class="rain-count glass" hidden aria-live="polite"></div>
+
     <div id="ack-bar" class="ack glass" hidden>
       <span>🔴 แจ้งเตือนซ้ำทุก 15 นาที</span>
       <button id="ack-btn" class="btn btn-red">รับทราบ</button>
@@ -111,29 +113,17 @@
     <!-- แท็บ: แผนที่ -->
     <section class="tab" id="tab-map" hidden>
       <div id="map" class="map glass"></div>
-      <p class="hint">วงกลม = สถานีวัดน้ำ (สีตามสถานะ) · 🏠 = บ้าน · แตะวงกลมเพื่อดูค่า</p>
+      <div class="map-legend glass">
+        <div><span class="lg-line" style="--c:#39c6ff"></span><b>แม่น้ำเจ้าพระยา</b> น้ำเหนือหลัก นครสวรรค์ → อ่าวไทย</div>
+        <div><span class="lg-line thin" style="--c:#39c6ff"></span><b>คลองฝั่งตะวันออก</b> ระพีพัฒน์ → หกวา → 🏠 บ้านเรา → แสนแสบ → ทะเล</div>
+        <div class="lg-dots"><i style="--c:#22e39a"></i>ปกติ <i style="--c:#ffd23f"></i>เฝ้าระวัง <i style="--c:#ff8a2a"></i>ใกล้ตลิ่ง <i style="--c:#ff3b5c"></i>เกินตลิ่ง <i style="--c:#6b7a94"></i>ไม่มีข้อมูล</div>
+        <div class="muted small">เส้นประวิ่ง = ทิศน้ำไหล · เส้นเชื่อมสถานีเป็นแผนผัง ไม่ใช่แนวคลองจริง · แตะจุดเพื่อดูค่า</div>
+      </div>
     </section>
 
-    <!-- แท็บ: ไม้วัด -->
-    <section class="tab" id="tab-gauge" hidden>
-      <div class="glass card">
-        <h2>บันทึกไม้วัด คลองหนองระแหง</h2>
-        <p class="muted">อ่านค่าจากไม้วัด/ขีดสีที่ตลิ่ง แล้วบันทึกไว้เทียบกับสถานีทางการ</p>
-        <form id="gauge-form" class="gauge-form">
-          <label>ระดับน้ำ (ซม. จากขีดอ้างอิง)
-            <input type="number" id="g-value" inputmode="decimal" step="1" required>
-          </label>
-          <label>หมายเหตุ
-            <input type="text" id="g-note" maxlength="80" placeholder="เช่น น้ำขุ่น ไหลแรง">
-          </label>
-          <button class="btn" type="submit">บันทึก</button>
-        </form>
-        <p class="muted small">⚠️ ตอนนี้เก็บในเครื่องนี้เท่านั้น (เครื่องอื่นในบ้านจะไม่เห็น)</p>
-      </div>
-      <div class="glass card">
-        <h3>ประวัติที่บันทึก</h3>
-        <div id="gauge-list" class="gauge-list"></div>
-      </div>
+    <!-- แท็บ: สรุป (Dashboard) -->
+    <section class="tab" id="tab-dash" hidden>
+      <div id="dash-body"></div>
     </section>
 
     <!-- แท็บ: ข้อมูล / ตั้งค่า -->
@@ -192,7 +182,7 @@
     <button data-tab="rain"><span>🌧️</span>ฝน</button>
     <button data-tab="river"><span>🌊</span>น้ำเหนือ</button>
     <button data-tab="map"><span>🗺️</span>แผนที่</button>
-    <button data-tab="gauge"><span>📏</span>ไม้วัด</button>
+    <button data-tab="dash"><span>📊</span>สรุป</button>
     <button data-tab="info"><span>ℹ️</span>ข้อมูล</button>
   </nav>
 

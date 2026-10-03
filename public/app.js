@@ -2,6 +2,8 @@
 import { initRain } from './rain.js';
 import { renderRiver } from './river.js';
 import { whenLib } from './lib.js';
+import { renderDashboard } from './dashboard.js';
+import { drawFlowMap } from './flowmap.js';
 const REFRESH_MS = 5 * 60 * 1000;
 const HOME_FALLBACK = { lat: 13.91, lon: 100.70 };
 const STALE_DATA_MIN = 75;           // ไฟล์ข้อมูลเก่ากว่านี้ = เตือนให้เช็กเอง
@@ -23,7 +25,7 @@ const ACTIONS = {
   yellow: {
     icon: '⚠️', tag: 'เฝ้าระวัง',
     head: 'เตรียมกระสอบทรายไว้ใกล้ประตู พร้อมวางได้ทันที',
-    items: ['เช็กของจำเป็น: ไฟฉาย ยา เอกสารสำคัญ', 'ดูคลองหนองระแหงเช้า-เย็น แล้วบันทึกไม้วัด', 'ถ้ามีน้ำขังถนนในหมู่บ้าน ให้วางกั้นเลย'],
+    items: ['เช็กของจำเป็น: ไฟฉาย ยา เอกสารสำคัญ', 'ดูคลองหนองระแหงเช้า-เย็น', 'ถ้ามีน้ำขังถนนในหมู่บ้าน ให้วางกั้นเลย'],
   },
   orange: {
     icon: '🟠', tag: 'เตรียมพร้อม',
@@ -151,6 +153,8 @@ function render() {
 
   renderLine();
   renderInfo();
+  renderRainCountdown();
+  if (!$('#tab-dash').hidden) { renderDashboard(DATA, HISTORY, { stale: dataStale }); loadHistory().then((h) => { if (!$('#tab-dash').hidden) renderDashboard(DATA, h, { stale: dataStale }); }); }
   if (!$('#tab-river').hidden) renderRiver(DATA.river, { stale: dataStale, home: homeForRiver() });
   if (map || !$('#tab-map').hidden) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   handleAlerts(st, dataStale);
@@ -165,6 +169,39 @@ function render() {
 function homeForRiver() {
   const node = DATA.nodes.find((n) => n.role === 'home');
   return { lat: DATA.home.lat, lon: DATA.home.lon, status: DATA.overall.status, station: node ? repStation(node) : null };
+}
+
+// แถบนับถอยหลังฝน (พยากรณ์ + เรดาร์) — อัปเดตทุก 30 วินาที
+const durTxt = (ms) => {
+  const m = Math.max(0, Math.round(ms / 60000));
+  return m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม.${m % 60 ? ` ${m % 60} นาที` : ''}`;
+};
+function renderRainCountdown() {
+  const el = $('#rain-count');
+  if (!DATA || STALE_VIEW) { el.hidden = true; return; }
+  const now = Date.now();
+  const w = DATA.rain?.window;
+  const rd = DATA.radar;
+  const end = w ? w.end + 3600e3 : null;
+  let html = '';
+  let level = 'green';
+  if (rd && rd.atHome >= 2 && now - rd.time < 40 * 60000) {
+    level = rd.atHome >= 4 ? 'orange' : 'yellow';
+    html = `<b>☔ ฝนกำลังตกที่บ้าน</b> <span class="muted">(เรดาร์ ${fmtHM(rd.time)})</span><br>` +
+      (end && end > now ? `⏹️ คาดว่าจะหยุดในอีก <b class="rc-num">${durTxt(end - now)}</b> · ราว ${fmtHM(end)}` : '⏹️ ยังบอกเวลาหยุดไม่ได้');
+  } else if (w && w.start > now) {
+    level = w.peakMm >= 10 ? 'orange' : 'yellow';
+    html = `<b>🌧️ ฝนจะเริ่มในอีก <span class="rc-num">${durTxt(w.start - now)}</span></b> · ราว ${fmtHM(w.start)}<br>` +
+      `⏹️ หยุดราว ${fmtHM(end)} · ตกนาน ~${durTxt(end - w.start)} · ~${w.totalMm} มม. · โอกาส ${w.maxProb}%`;
+  } else if (w && end > now) {
+    level = 'yellow';
+    html = `<b>🌦️ พยากรณ์ว่ามีฝนช่วงนี้</b> ถึงราว ${fmtHM(end)} (อีก ${durTxt(end - now)})<br><span class="muted">เรดาร์ยังไม่เห็นฝนเหนือบ้าน</span>`;
+  } else {
+    html = `<b>☀️ 12 ชม. ข้างหน้ายังไม่มีฝนที่บ้าน</b>${rd?.nearest ? ` <span class="muted">· กลุ่มฝนใกล้สุด ${Math.round(rd.nearest.km)} กม.</span>` : ''}`;
+  }
+  el.dataset.status = level;
+  el.innerHTML = html;
+  el.hidden = false;
 }
 
 function showBanner(msg) {
@@ -210,7 +247,7 @@ function renderLine() {
     const home = n.role === 'home';
     const r = home ? 17 : 9;
     const rep = repStation(n);
-    let val = 'ไม่มีข้อมูลล่าสุด';
+    let val = n.stations.every((s) => s.offline) ? 'ไม่มีในแหล่งข้อมูลออนไลน์' : 'ไม่มีข้อมูลล่าสุด';
     let sub = '';
     if (rep) {
       val = `${rep.wl.toFixed(2)} ม.` + (rep.bank != null ? ` · ${rep.wl >= rep.bank ? 'เกินตลิ่ง ' + cm(rep.wl - rep.bank) : 'ต่ำกว่าตลิ่ง ' + cm(rep.bank - rep.wl)}` : '');
@@ -450,38 +487,20 @@ function renderMap() {
       maxZoom: 18, className: 'dark-tiles',
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
-    L.marker([DATA.home.lat, DATA.home.lon], { icon: L.divIcon({ className: 'home-marker', html: '🏠', iconSize: [30, 30], iconAnchor: [15, 15] }) })
-      .addTo(map).bindPopup(esc(DATA.home.name));
   }
   if (mapLayer) mapLayer.remove();
   mapLayer = L.layerGroup().addTo(map);
-  const bounds = [[DATA.home.lat, DATA.home.lon]];
-  for (const n of DATA.nodes) for (const s of n.stations) {
-    if (s.lat == null) continue;
-    const c = colorOf(s.status);
-    L.circleMarker([s.lat, s.lon], { radius: s.primary ? 10 : 7, color: c, fillColor: c, fillOpacity: 0.55, weight: 2 })
-      .bindPopup(`<b>${esc(s.name)}</b><br>${esc(n.name)}<br>${EMOJI[s.status]} ${LABEL[s.status]} · ${s.wl != null ? s.wl.toFixed(2) + ' ม.' : '—'}<br><span style="color:#8ea3c4">${esc(s.reason || '')}</span>`)
-      .addTo(mapLayer);
-    if (n.role !== 'up' || s.distKm < 15) bounds.push([s.lat, s.lon]);
+  const bounds = drawFlowMap(map, mapLayer, DATA, { stale: STALE_VIEW, calm });
+  // จัดมุมมองให้เห็นเส้นทั้งสาย — รอให้กรอบแผนที่มีขนาดจริงก่อน (ถ้าซ่อนอยู่ ขนาดเป็น 0 แล้วซูมผิด)
+  if (!renderMap.fitted && bounds.length) {
+    setTimeout(() => {
+      if (!map || $('#tab-map').hidden || !$('#map').clientHeight) return;
+      map.invalidateSize();
+      map.fitBounds(bounds, { padding: [16, 16] });
+      renderMap.fitted = true;
+    }, 120);
   }
-  if (!renderMap.fitted) { map.fitBounds(bounds, { padding: [24, 24] }); renderMap.fitted = true; }
-}
-
-/* ---------------- ไม้วัด ---------------- */
-function renderGauge() {
-  const list = store.get('gauge', []);
-  $('#gauge-list').innerHTML = list.length
-    ? list.slice().reverse().map((g, i) => `
-      <div class="g-row"><span class="muted">${esc(fmtTime(g.t))}</span><span><span class="g-val">${esc(g.v)} ซม.</span> ${esc(g.note || '')}</span>
-      <button class="g-del" data-i="${list.length - 1 - i}" aria-label="ลบ">✕</button></div>`).join('')
-    : '<p class="muted small">ยังไม่มีบันทึก</p>';
-  document.querySelectorAll('.g-del').forEach((b) => b.addEventListener('click', () => {
-    if (!confirm('ลบบันทึกนี้?')) return;
-    const l = store.get('gauge', []);
-    l.splice(Number(b.dataset.i), 1);
-    store.set('gauge', l);
-    renderGauge();
-  }));
+  renderMap.bounds = bounds;
 }
 
 /* ---------------- ข้อมูล ---------------- */
@@ -559,7 +578,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== `tab-${tab}`; });
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   if (tab === 'map' && DATA) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
-  if (tab === 'gauge') renderGauge();
+  if (tab === 'dash' && DATA) { renderDashboard(DATA, HISTORY, { stale: STALE_VIEW }); loadHistory().then((h) => { if (!$('#tab-dash').hidden) renderDashboard(DATA, h, { stale: STALE_VIEW }); }); }
   if (tab === 'rain') initRain({ home: DATA?.home || HOME_FALLBACK, calm });
   if (tab === 'river' && DATA) renderRiver(DATA.river, { stale: STALE_VIEW, home: homeForRiver() });
   store.set('tab', tab);
@@ -588,23 +607,14 @@ function bind() {
     const ok = await notify('🔔 ทดสอบแจ้งเตือน', 'ถ้าเห็นข้อความนี้ แปลว่าแจ้งเตือนใช้ได้', 'test');
     if (!ok) alert('ยังแจ้งเตือนไม่ได้ — กด "อนุญาตการแจ้งเตือน" ก่อน');
   });
-  $('#gauge-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const v = Number($('#g-value').value);
-    if (!Number.isFinite(v)) return;
-    const list = store.get('gauge', []);
-    list.push({ t: Date.now(), v, note: $('#g-note').value.trim() });
-    store.set('gauge', list.slice(-500));
-    e.target.reset();
-    renderGauge();
-  });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 }
 
 async function init() {
   await decideCalm();
   bind();
-  switchTab(store.get('tab', 'line'));
+  const saved = store.get('tab', 'line');
+  switchTab(document.querySelector(`#tab-${saved}`) ? saved : 'line');
   if ('serviceWorker' in navigator) {
     try { swReg = await navigator.serviceWorker.register('sw.js'); } catch { /* file:// หรือไม่รองรับ */ }
   }
@@ -616,6 +626,7 @@ async function init() {
   await load();
   setInterval(load, REFRESH_MS);
   setInterval(redRepeatTick, 60 * 1000);
+  setInterval(renderRainCountdown, 30 * 1000);
 }
 
 init();

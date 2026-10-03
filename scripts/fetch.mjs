@@ -156,8 +156,9 @@ async function main() {
         rate: rate === null ? null : Math.round(rate * 1000) / 1000,
         status: st.status,
         reason: st.status === 'unknown' && ref.src === 'bma' && !sources.bma.ok
-          ? 'ดึงจาก กทม. ตรงไม่ได้ และแหล่งสำรองไม่มีสถานีนี้'
+          ? 'มีข้อมูลเฉพาะบนเว็บ กทม. ซึ่งไม่เปิดให้ระบบออนไลน์ดึง — กด "ดูหน้าทางการ"'
           : st.reason,
+        offline: st.status === 'unknown' && ref.src === 'bma' && !sources.bma.ok,
         margin: st.margin ?? null,
         distKm: s.lat ? Math.round(distKm(HOME.lat, HOME.lon, s.lat, s.lon) * 10) / 10 : null,
       };
@@ -193,6 +194,7 @@ async function main() {
     rainWindow,
     radar,
     rainToday: rainDays[0] ? { mm: rainDays[0].mm, prob: rainDays[0].prob } : null,
+    stations: nodes.flatMap((n) => n.stations.map((s) => ({ key: s.key, name: s.name, role: n.role, status: s.status, wl: s.wl, bank: s.bank, margin: s.margin, rate: s.rate, time: s.time }))),
     river: river ? {
       frontIdx: front ? river.stations.indexOf(front) : null,
       frontName: front?.name ?? null,

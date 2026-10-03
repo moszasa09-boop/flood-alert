@@ -67,7 +67,9 @@ test('พยากรณ์ช่วงฝน: แจ้งครั้งเด
   const w = { start: min(120), end: min(240), maxProb: 70, totalMm: 8, peakMm: 4 };
   let r = run({ lastStatus: 'green' }, 'green', 0, { rainWindow: w });
   assert.equal(r.messages.length, 1);
-  assert.match(r.messages[0].title, /ฝนจะตกที่บ้าน 12:00–15:00/);
+  assert.match(r.messages[0].title, /ฝนจะตกที่บ้านในอีก 2 ชม\./);
+  assert.match(r.messages[0].message, /เริ่มราว 12:00 น\. \(อีก 2 ชม\.\)/);
+  assert.match(r.messages[0].message, /หยุดราว 15:00 น\. · ตกนาน ~3 ชม\./);
   r = run(r.state, 'green', 15, { rainWindow: { ...w, start: min(180) } }); // เลื่อน 60 นาที → ไม่แจ้ง
   assert.equal(r.messages.length, 0);
   r = run(r.state, 'green', 30, { rainWindow: { ...w, start: min(300), end: min(360) } }); // เลื่อนจากล่าสุด 120 นาที
@@ -149,4 +151,56 @@ test('เรดาร์: กลุ่มฝนก่อตัวใหม่ใ
   const r = run({ lastStatus: 'green' }, 'green', 0, { radar: { time: min(0), atHome: 0, nearest: { km: 8, bearing: 135, level: 3 }, trend: { trend: 'new', speed: null, etaMin: null } } });
   assert.match(r.messages[0].title, /ก่อตัวใกล้บ้าน 8 กม/);
   assert.doesNotMatch(r.messages[0].message, /นาที/);
+});
+
+test('นับถอยหลัง: เตือนอีกครั้งเมื่อเหลือ ~30 นาทีก่อนฝนเริ่ม', () => {
+  const w = { start: min(120), end: min(180), maxProb: 80, totalMm: 6, peakMm: 4 };
+  let r = run({ lastStatus: 'green' }, 'green', 0, { rainWindow: w });   // แจ้งพยากรณ์
+  r = run(r.state, 'green', 60, { rainWindow: w });                        // เหลือ 60 นาที → ยังไม่เตือน
+  assert.equal(r.messages.length, 0);
+  r = run(r.state, 'green', 90, { rainWindow: w });                        // เหลือ 30 นาที → ⏰
+  assert.match(r.messages[0].title, /ฝนจะเริ่มในอีก ~30 นาที/);
+  assert.match(r.messages[0].message, /หยุดราว 14:00/); // end = ชั่วโมงสุดท้ายที่มีฝน (13:00) → หยุดราว 14:00
+  r = run(r.state, 'green', 105, { rainWindow: w });                       // ไม่เตือนซ้ำ
+  assert.equal(r.messages.length, 0);
+});
+
+test('ฝนเริ่มตก: บอกนับถอยหลังเวลาหยุด และอัปเดตทุก 1 ชม. ถ้ายังตก', () => {
+  const w = { start: min(0), end: min(120), maxProb: 90, totalMm: 10, peakMm: 6 }; // หยุดราว 13:00
+  let r = run({ lastStatus: 'green', rainWindowStart: min(0), rainWindowEnd: min(120) }, 'green', 10, { rainWindow: w, radar: { time: min(10), atHome: 3, nearest: { km: 0, bearing: 0, level: 3 } } });
+  assert.match(r.messages[0].title, /เริ่มตกที่บ้านแล้ว/);
+  assert.match(r.messages[0].message, /คาดว่าจะหยุดอีก 2 ชม\. 50 นาที \(ราว 13:00 น\.\)/);
+  r = run(r.state, 'green', 40, { rainWindow: w, radar: { time: min(40), atHome: 3, nearest: { km: 0, bearing: 0, level: 3 } } });
+  assert.equal(r.messages.length, 0);
+  r = run(r.state, 'green', 70, { rainWindow: w, radar: { time: min(70), atHome: 3, nearest: { km: 0, bearing: 0, level: 3 } } });
+  assert.match(r.messages[0].title, /ฝนยังตกอยู่ — ตกมาแล้ว 1 ชม\./);
+  assert.match(r.messages[0].message, /คาดว่าจะหยุดอีก 1 ชม\. 50 นาที/);
+});
+
+test('น้ำขึ้นเร็ว: รวมเป็นข้อความเดียว บอกเวลาถึงตลิ่ง และไม่แจ้งซ้ำภายใน 3 ชม.', () => {
+  const st = (key, name, role, margin, rate) => ({ key, name, role, status: 'yellow', wl: 1.2, bank: 1.2 + margin, margin, rate, time: min(0) });
+  const stations = [st('a', 'ถ.จตุโชติ', 'home', 0.2, 0.04), st('b', 'แสนแสบ', 'down', 0.5, 0.05), st('c', 'ไกล', 'up', 2, 0.1), st('d', 'นิ่ง', 'down', 0.3, 0.01)];
+  let r = run({ lastStatus: 'yellow' }, 'yellow', 0, { stations });
+  assert.equal(r.messages.length, 1);
+  assert.match(r.messages[0].title, /น้ำขึ้นเร็ว 2 จุด \(รวมคลองใกล้บ้าน\)/);
+  assert.match(r.messages[0].message, /🏠 ถ.จตุโชติ: ขึ้น 4 ซม\.\/ชม\. · เหลือ 20 ซม\. → ถึงตลิ่งใน ~5 ชม\./);
+  assert.equal(r.messages[0].priority, 4);
+  r = run(r.state, 'yellow', 15, { stations });
+  assert.equal(r.messages.length, 0);
+});
+
+test('เกินตลิ่ง: แจ้งเมื่อยืนยันด้วยค่าวัดใหม่ แจ้งครั้งเดียว และแจ้งเมื่อกลับต่ำกว่าตลิ่ง', () => {
+  const st = (m, t) => [{ key: 'x', name: 'ปตร.แสนแสบ', role: 'down', status: m <= 0 ? 'red' : 'yellow', wl: 1, bank: 1 + m, margin: m, rate: 0.01, time: min(t) }];
+  let r = run({ lastStatus: 'yellow' }, 'yellow', 0, { stations: st(-0.05, 0) });
+  assert.equal(r.messages.length, 0);                       // ค่าแรก รอยืนยัน
+  r = run(r.state, 'yellow', 15, { stations: st(-0.05, 0) }); // ค่าเดิม → ยังไม่แจ้ง
+  assert.equal(r.messages.length, 0);
+  r = run(r.state, 'yellow', 30, { stations: st(-0.07, 25) });
+  assert.match(r.messages[0].title, /ปตร.แสนแสบ น้ำเกินตลิ่งแล้ว/);
+  r = run(r.state, 'yellow', 45, { stations: st(-0.08, 40) });
+  assert.equal(r.messages.length, 0);                       // ไม่แจ้งซ้ำ
+  r = run(r.state, 'yellow', 60, { stations: st(0.05, 55) });
+  assert.equal(r.messages.length, 0);
+  r = run(r.state, 'yellow', 75, { stations: st(0.06, 70) });
+  assert.match(r.messages[0].title, /กลับต่ำกว่าตลิ่งแล้ว/);
 });

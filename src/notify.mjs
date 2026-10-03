@@ -36,6 +36,12 @@ const dur = (ms) => {
   const m = Math.max(0, Math.round(ms / 60000));
   return m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม.${m % 60 ? ` ${m % 60} นาที` : ''}`;
 };
+// "อีก 1 ชม. 15 นาที" นับจาก now ถึง t
+const until = (t, now) => (t - now <= 60000 ? 'ตอนนี้' : `อีก ${dur(t - now)}`);
+const RAIN_REMIND_MIN = 35;         // เตือนซ้ำเมื่อเหลือไม่ถึง 35 นาทีก่อนฝนเริ่ม
+const RAIN_UPDATE_MS = 60 * 60000;  // ฝนตกนาน: ส่งอัปเดตทุก 1 ชม.
+const RISE_ALERT = 0.03;            // น้ำขึ้น ≥ 3 ซม./ชม. = แจ้ง
+const RISE_GAP_MS = 3 * 3600e3;     // แจ้งน้ำขึ้นเร็วของสถานีเดิม ห่างกันอย่างน้อย 3 ชม.
 const APPROACH_GAP_MS = 2 * 3600e3; // เตือน "กลุ่มฝนกำลังเข้ามา" ห่างกันอย่างน้อย 2 ชม.
 const DAM_STEP = 300;               // เขื่อนเปลี่ยนการปล่อยน้ำ ≥ 300 ลบ.ม./วิ จึงแจ้ง
 
@@ -53,12 +59,14 @@ export function decide(state, ctx) {
     lastStatus: null, pendingDown: null, redCount: 0, lastRedAt: 0, unknownRuns: 0, morningDate: null,
     rainWindowStart: null, rainWindowEnd: null, raining: false, rainStartedAt: null, lastWetAt: null, dryRuns: 0, approachAt: 0,
     riverFrontIdx: undefined, damNotified: null,
+    rainRemindFor: null, rainUpdateAt: 0, riseAt: {}, overbank: {},
     ...(state || {}),
   };
-  const { status, reasons = [], home, now, rainWindow, radar, rainToday, river } = ctx;
+  const { status, reasons = [], home, now, rainWindow, radar, rainToday, river, stations = [] } = ctx;
   const msgs = [];
   statusAlerts(s, msgs, { status, reasons, home, now });
   rainAlerts(s, msgs, { rainWindow, radar, home, now });
+  stationAlerts(s, msgs, stations, now);
   riverAlerts(s, msgs, river);
 
   // สรุปเช้า (วันละครั้ง ช่วง 07:00–07:59)
@@ -132,15 +140,27 @@ function statusAlerts(s, msgs, { status, reasons, home, now }) {
 function rainAlerts(s, msgs, { rainWindow, radar, home, now }) {
   // 1) พยากรณ์: ช่วงฝนครั้งถัดไปใน 12 ชม. (แจ้งครั้งเดียวต่อช่วง แจ้งใหม่ถ้าเวลาเลื่อนเกิน 90 นาที)
   if (rainWindow) {
+    const endT = rainWindow.end + 3600e3;
     const shifted = s.rainWindowStart == null || Math.abs(rainWindow.start - s.rainWindowStart) > 90 * 60000;
+    const heavy = rainWindow.peakMm >= 10;
     if (shifted && !s.raining) {
-      const endT = rainWindow.end + 3600e3;
-      const heavy = rainWindow.peakMm >= 10;
       msgs.push({
-        title: `🌧️ พยากรณ์: ${heavy ? 'ฝนหนัก' : 'ฝน'}จะตกที่บ้าน ${hm(rainWindow.start)}–${hm(endT)}`,
-        message: `ราว ${hm(rainWindow.start)} ถึง ${hm(endT)} น. (~${dur(endT - rainWindow.start)})\nรวม ~${rainWindow.totalMm} มม. · แรงสุด ~${rainWindow.peakMm} มม./ชม. · โอกาส ${rainWindow.maxProb}%\nเป็นพยากรณ์ อาจคลาดเคลื่อน — ดูเรดาร์ในแท็บ "ฝน"`,
+        title: `🌧️ ${heavy ? 'ฝนหนัก' : 'ฝน'}จะตกที่บ้าน${until(rainWindow.start, now) === 'ตอนนี้' ? 'ตอนนี้' : `ใน${until(rainWindow.start, now)}`}`,
+        message: `⏱️ เริ่มราว ${hm(rainWindow.start)} น. (${until(rainWindow.start, now)})\n⏹️ หยุดราว ${hm(endT)} น. · ตกนาน ~${dur(endT - rainWindow.start)}\nรวม ~${rainWindow.totalMm} มม. · แรงสุด ~${rainWindow.peakMm} มม./ชม. · โอกาส ${rainWindow.maxProb}%\nเป็นพยากรณ์ อาจคลาดเคลื่อน — ดูเรดาร์ในแท็บ "ฝน"`,
         priority: heavy ? 4 : 3,
         tags: ['cloud_with_rain'],
+      });
+    }
+    // เตือนนับถอยหลังก่อนฝนเริ่ม ~30 นาที (ครั้งเดียวต่อช่วงฝน)
+    const left = (rainWindow.start - now) / 60000;
+    const reminded = s.rainRemindFor != null && Math.abs(rainWindow.start - s.rainRemindFor) <= 90 * 60000;
+    if (!s.raining && left > 0 && left <= RAIN_REMIND_MIN && !reminded && !shifted) {
+      s.rainRemindFor = rainWindow.start;
+      msgs.push({
+        title: `⏰ ฝนจะเริ่มในอีก ~${Math.round(left)} นาที`,
+        message: `ราว ${hm(rainWindow.start)} น. และน่าจะหยุดราว ${hm(endT)} น. (~${dur(endT - rainWindow.start)})\nเก็บผ้า ปิดหน้าต่าง เตรียมกระสอบทรายให้พร้อม`,
+        priority: heavy ? 4 : 3,
+        tags: ['alarm_clock'],
       });
     }
     s.rainWindowStart = rainWindow.start;
@@ -157,16 +177,33 @@ function rainAlerts(s, msgs, { rainWindow, radar, home, now }) {
     s.rainStartedAt = radar.time;
     s.lastWetAt = radar.time;
     s.dryRuns = 0;
-    const until = s.rainWindowEnd && s.rainWindowEnd + 3600e3 > now ? `\nพยากรณ์ว่าน่าจะหยุดราว ${hm(s.rainWindowEnd + 3600e3)} น.` : '';
+    const stopAt = s.rainWindowEnd != null && s.rainWindowEnd + 3600e3 > now ? s.rainWindowEnd + 3600e3 : null;
+    const stopTxt = stopAt ? `\n⏹️ คาดว่าจะหยุด${until(stopAt, now)} (ราว ${hm(stopAt)} น.)` : '\n⏹️ ยังบอกเวลาหยุดไม่ได้ (พยากรณ์ไม่ได้คาดว่าจะมีฝนช่วงนี้)';
+    s.rainUpdateAt = now;
     msgs.push({
       title: `🌧️ ${RAIN_LEVEL[radar.atHome]}เริ่มตกที่บ้านแล้ว (${hm(radar.time)})`,
-      message: `จากเรดาร์เวลา ${hm(radar.time)} น.${until}\n${homeLine(home)}`,
+      message: `จากเรดาร์เวลา ${hm(radar.time)} น.${stopTxt}\n${homeLine(home)}`,
       priority: radar.atHome >= 4 ? 4 : 3,
       tags: ['umbrella'],
     });
     return;
   }
-  if (wet) { s.lastWetAt = radar.time; s.dryRuns = 0; return; }
+  if (wet) {
+    s.lastWetAt = radar.time;
+    s.dryRuns = 0;
+    // ฝนยังตกต่อเนื่อง: อัปเดตทุก 1 ชม. ว่าตกมานานเท่าไร และคาดว่าจะหยุดเมื่อไร
+    if (now - (s.rainUpdateAt || 0) >= RAIN_UPDATE_MS - 2 * 60000) {
+      s.rainUpdateAt = now;
+      const stopAt = s.rainWindowEnd != null && s.rainWindowEnd + 3600e3 > now ? s.rainWindowEnd + 3600e3 : null;
+      msgs.push({
+        title: `☔ ฝนยังตกอยู่ — ตกมาแล้ว ${dur(now - s.rainStartedAt)}`,
+        message: `${RAIN_LEVEL[radar.atHome]} (เรดาร์ ${hm(radar.time)} น.)\n${stopAt ? `⏹️ คาดว่าจะหยุด${until(stopAt, now)} (ราว ${hm(stopAt)} น.)` : '⏹️ ยังบอกเวลาหยุดไม่ได้'}\n${homeLine(home)}`,
+        priority: radar.atHome >= 4 ? 4 : 2,
+        tags: ['umbrella'],
+      });
+    }
+    return;
+  }
   // 3) เรดาร์: ฝนหยุด (ต้องแห้งติดกัน 2 รอบ)
   if (s.raining) {
     s.dryRuns++;
@@ -206,6 +243,58 @@ function rainAlerts(s, msgs, { rainWindow, radar, home, now }) {
       tags: ['cloud_with_rain'],
     });
   }
+}
+
+// แต่ละสถานี: น้ำขึ้นเร็ว และ น้ำเกินตลิ่ง/กลับต่ำกว่าตลิ่ง
+// stations: [{ key, name, role, status, wl, bank, margin, rate, time }]
+function stationAlerts(s, msgs, stations, now) {
+  // 1) น้ำขึ้นเร็ว ≥ 3 ซม./ชม. (เฉพาะจุดที่เหลือไม่ถึง 1 ม. ถึงตลิ่ง) — รวมเป็นข้อความเดียว
+  const rising = stations.filter((x) => ['green', 'yellow', 'orange', 'red'].includes(x.status) && x.rate != null && x.rate >= RISE_ALERT
+    && x.margin != null && x.margin < 1 && x.margin > 0 && now - (s.riseAt[x.key] || 0) >= RISE_GAP_MS);
+  if (rising.length) {
+    rising.sort((a, b) => a.margin / a.rate - b.margin / b.rate);
+    const lines = rising.slice(0, 4).map((x) => {
+      const eta = x.margin / x.rate; // ชม. ถ้าขึ้นต่อในอัตรานี้
+      return `• ${x.role === 'home' ? '🏠 ' : ''}${x.name}: ขึ้น ${Math.round(x.rate * 100)} ซม./ชม. · เหลือ ${Math.round(x.margin * 100)} ซม. → ถึงตลิ่งใน ~${dur(eta * 3600e3)} ถ้าขึ้นต่อแบบนี้`;
+    });
+    const urgent = rising.some((x) => x.role === 'home' || x.margin / x.rate <= 6);
+    msgs.push({
+      title: `📈 น้ำขึ้นเร็ว ${rising.length} จุด${rising.some((x) => x.role === 'home') ? ' (รวมคลองใกล้บ้าน)' : ''}`,
+      message: `${lines.join('\n')}\nเวลาถึงตลิ่งเป็นการประมาณ ถ้าน้ำขึ้นต่อด้วยอัตราเดิม`,
+      priority: urgent ? 4 : 3,
+      tags: ['chart_with_upwards_trend'],
+    });
+    for (const x of rising) s.riseAt[x.key] = now;
+  }
+
+  // 2) เกินตลิ่ง: ยืนยันด้วยค่าวัดใหม่ก่อนแจ้ง / กลับต่ำกว่าตลิ่ง: ต้องต่ำกว่า 2 รอบ
+  const seen = new Set();
+  for (const x of stations) {
+    if (!['green', 'yellow', 'orange', 'red'].includes(x.status) || x.margin == null) continue;
+    seen.add(x.key);
+    const ob = s.overbank[x.key];
+    if (x.margin <= 0) {
+      if (!ob) { s.overbank[x.key] = { firstAt: x.time, notified: false, below: 0 }; continue; }
+      ob.below = 0;
+      if (!ob.notified && x.time > ob.firstAt) {
+        ob.notified = true;
+        msgs.push({
+          title: `🔴 ${x.role === 'home' ? '🏠 ' : ''}${x.name} น้ำเกินตลิ่งแล้ว`,
+          message: `ระดับน้ำ ${x.wl.toFixed(2)} ม. เกินตลิ่ง ${Math.round(-x.margin * 100)} ซม.${x.rate != null ? ` · ${x.rate > 0.005 ? `ยังขึ้น ${Math.round(x.rate * 100)} ซม./ชม.` : x.rate < -0.005 ? `เริ่มลด ${Math.round(-x.rate * 100)} ซม./ชม.` : 'ทรงตัว'}` : ''}`,
+          priority: x.role === 'home' ? 5 : 4,
+          tags: ['rotating_light'],
+        });
+      }
+    } else if (ob) {
+      ob.below++;
+      if (ob.below >= 2) {
+        if (ob.notified) msgs.push({ title: `✅ ${x.name} น้ำกลับต่ำกว่าตลิ่งแล้ว`, message: `ต่ำกว่าตลิ่ง ${Math.round(x.margin * 100)} ซม.`, priority: 2, tags: ['white_check_mark'] });
+        delete s.overbank[x.key];
+      }
+    }
+  }
+  for (const k of Object.keys(s.overbank)) if (!seen.has(k) && now - (s.overbank[k].firstAt || 0) > 24 * 3600e3) delete s.overbank[k];
+  for (const k of Object.keys(s.riseAt)) if (now - s.riseAt[k] > 24 * 3600e3) delete s.riseAt[k];
 }
 
 function riverAlerts(s, msgs, river) {
