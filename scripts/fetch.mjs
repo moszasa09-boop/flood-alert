@@ -3,7 +3,7 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { HOME, NODES, STALE_MIN, HISTORY_HOURS, HEAVY_RAIN_MM } from '../src/config.mjs';
+import { HOME, NODES, STALE_MIN, HISTORY_HOURS, HEAVY_RAIN_MM, SOURCES } from '../src/config.mjs';
 import { fetchRainDaily, heavyRainSoon } from '../src/sources/openmeteo.mjs';
 import { decide, sendNtfy } from '../src/notify.mjs';
 import { fetchPopnixAll, fetchPopnixHistory, matchByLocation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
@@ -136,7 +136,12 @@ async function main() {
       const key = `${ref.src}:${ref.id}`;
       const found = index.get(key) || prevStations.get(key) || { key, src: ref.src, id: ref.id, wl: null, time: null };
       // ชื่อ: ใช้ของแหล่งข้อมูล ถ้าไม่มี (หรือเป็นรหัส เช่น "bma:303" จากรอบเก่า) ใช้ชื่อใน config
-      const s = { ...found, name: found.name && found.name !== key ? found.name : ref.name || key, lat: found.lat ?? ref.lat, lon: found.lon ?? ref.lon };
+      const s = {
+        ...found,
+        name: found.name && found.name !== key ? found.name : ref.name || key,
+        lat: found.lat ?? ref.lat, lon: found.lon ?? ref.lon,
+        url: found.url || (ref.src === 'bma' ? SOURCES.bmaDetail(ref.id) : 'https://www.thaiwater.net/water/wl'),
+      };
       const base = s;
       const rate = risingRate(history[key]);
       const st = stationStatus(base, rate, STALE_MIN[ref.src === 'tw' ? 'thaiwater' : 'bma'], now, { risingOrange: node.role === 'home' });
@@ -145,7 +150,9 @@ async function main() {
         primary: !!ref.primary,
         rate: rate === null ? null : Math.round(rate * 1000) / 1000,
         status: st.status,
-        reason: st.reason,
+        reason: st.status === 'unknown' && ref.src === 'bma' && !sources.bma.ok
+          ? 'ดึงจาก กทม. ตรงไม่ได้ และแหล่งสำรองไม่มีสถานีนี้'
+          : st.reason,
         margin: st.margin ?? null,
         distKm: s.lat ? Math.round(distKm(HOME.lat, HOME.lon, s.lat, s.lon) * 10) / 10 : null,
       };
