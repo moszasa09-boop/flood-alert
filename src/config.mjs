@@ -24,57 +24,58 @@ export const HISTORY_HOURS = 48;
 
 // แผนผังสายน้ำ (บนลงล่าง) — role: up = ต้นน้ำ, home = บ้าน, down = ทางระบาย
 // สถานี: src 'bma' = สำนักการระบายน้ำ กทม. (water_id), 'tw' = ThaiWater (station.id)
+// lat/lon ของสถานี กทม. ใช้จับคู่กับ POPNIX (แหล่งสำรอง) ตามตำแหน่ง
 export const NODES = [
   {
     id: 'rangsit', name: 'คลองรังสิต · ระพีพัฒน์', role: 'up', note: 'ต้นน้ำไกล (ปทุมธานี)',
     stations: [
       { src: 'tw', id: 36 },
       { src: 'tw', id: 29 },
-      { src: 'bma', id: 303 },
+      { src: 'bma', id: 303, lat: 13.96807, lon: 100.5535, name: 'คลองรังสิตประยูรศักดิ์ ตอนสถานีสูบน้ำปากคลองรังสิต*' },
     ],
   },
   {
     id: 'hokwa', name: 'คลองหกวาสายล่าง', role: 'up', note: 'ต้นน้ำใกล้ (รอยต่อ กทม./ปทุมฯ)',
     stations: [
       { src: 'tw', id: 37 },
-      { src: 'bma', id: 327 },
-      { src: 'bma', id: 318 },
+      { src: 'bma', id: 327, lat: 13.93354, lon: 100.7506, name: 'สถานีสูบน้ำกลางคลองหกวา ตอนถนนนิมิตใหม่*' },
+      { src: 'bma', id: 318, lat: 13.95869, lon: 100.8942, name: 'คลองสิบสาม ตอนสถานีสูบน้ำกลางคลองหกวาสายล่าง*' },
     ],
   },
   {
     id: 'samwa', name: 'คลองสามวา · ปตร.พระยาสุเรนทร์', role: 'up', note: 'เหนือบ้าน 2–4 กม.',
     stations: [
-      { src: 'bma', id: 20 },
-      { src: 'bma', id: 325 },
+      { src: 'bma', id: 20, lat: 13.92128, lon: 100.68731, name: 'ปตร.คลองพระยาสุเรนทร์' },
+      { src: 'bma', id: 325, lat: 13.92929, lon: 100.7259, name: 'คลองสามวา ตอนถนนเทศบาลลำลูกกา1*' },
     ],
   },
   {
-    id: 'home', name: 'บ้าน · คลองหนองระแหง', role: 'home', note: 'สถานีหลัก ห่างบ้าน 1 กม.',
+    id: 'home', name: 'บ้าน · คลองหนองระแหง', role: 'home', note: 'สถานีหลัก ห่างบ้าน 1 กม. (+ สำรอง ถ.จตุโชติ)',
     stations: [
-      { src: 'bma', id: 126, primary: true },
+      { src: 'bma', id: 126, primary: true, lat: 13.90121, lon: 100.69049, name: 'ค.พระยาสุเรนทร์ ถ.หนองระแหง' },
+      { src: 'bma', id: 125, lat: 13.87621, lon: 100.68614, name: 'ค.พระยาสุเรนทร์ ถ.จตุโชติ' }, // คลองเดียวกัน ใต้บ้าน 4 กม. — สำรองเมื่อ 126 ไม่มีข้อมูล (POPNIX ไม่มี 126)
     ],
   },
   {
-    id: 'bangchan', name: 'คลองพระยาสุเรนทร์ · บางชัน', role: 'down', note: 'ทางระบายใต้บ้าน 4–12 กม.',
+    id: 'bangchan', name: 'คลองพระยาสุเรนทร์ · บางชัน', role: 'down', note: 'ทางระบายใต้บ้าน 7–12 กม.',
     stations: [
-      { src: 'bma', id: 125 },
-      { src: 'bma', id: 124 },
-      { src: 'bma', id: 127 },
-      { src: 'bma', id: 128 },
-      { src: 'bma', id: 21 },
+      { src: 'bma', id: 124, lat: 13.85077, lon: 100.67829, name: 'ปตร.พระยาสุเรนทร์ ตอนคู้บอน' },
+      { src: 'bma', id: 127, lat: 13.83698, lon: 100.68803, name: 'ค.พระยาสุเรนทร์ ปัญญาอินทรา' },
+      { src: 'bma', id: 128, lat: 13.80274, lon: 100.70165, name: 'ค.พระยาสุเรนทร์ บางชัน' },
+      { src: 'bma', id: 21, lat: 13.85956, lon: 100.72931, name: 'ปตร.คลองสามวา' },
     ],
   },
   {
     id: 'saensaep', name: 'คลองแสนแสบ', role: 'down', note: 'ทางระบายหลัก',
     stations: [
-      { src: 'bma', id: 51 },
-      { src: 'bma', id: 25 },
-      { src: 'bma', id: 35 },
+      { src: 'bma', id: 51, lat: 13.85537, lon: 100.8721, name: 'ส.คลองแสนแสบ หนองจอก' },
+      { src: 'bma', id: 25, lat: 13.82094, lon: 100.74738, name: 'ปตร.คลองแสนแสบ-ถ.ประชาร่วมใจ' },
+      { src: 'bma', id: 35, lat: 13.76509, lon: 100.64791, name: 'ค.แสนแสบ-สนข.บางกะปิ' },
     ],
   },
   {
     id: 'prawet', name: 'คลองประเวศบุรีรมย์', role: 'down', note: 'ไปสถานีสูบน้ำ → ทะเล',
-    stations: [{ src: 'bma', id: 39 }],
+    stations: [{ src: 'bma', id: 39, lat: 13.72411, lon: 100.74987, name: 'ปตร.คลองประเวศฯ-ลาดกระบัง' }],
   },
 ];
 
@@ -83,6 +84,7 @@ export const SOURCES = {
   bmaDetail: (id) => `https://weather.bangkok.go.th/water/StationDetail?id=${id}`,
   thaiwater: 'https://api-v3.thaiwater.net/api/v1/thaiwater30/public/waterlevel_load',
   openmeteo: 'https://api.open-meteo.com/v1/forecast',
+  popnix: 'https://flood.pop.in.th',
 };
 
 // พยากรณ์ฝนรายวัน ≥ ค่านี้ (มม.) ใน 2 วันข้างหน้า = เฝ้าระวัง (เกณฑ์ "ฝนหนัก" ของกรมอุตุฯ คือ 35.1 มม./วัน)

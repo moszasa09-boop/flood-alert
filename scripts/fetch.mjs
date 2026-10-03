@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HOME, NODES, STALE_MIN, HISTORY_HOURS, HEAVY_RAIN_MM } from '../src/config.mjs';
 import { fetchRainDaily } from '../src/sources/openmeteo.mjs';
+import { fetchPopnixAll, fetchPopnixHistory, matchByLocation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
 import { fetchBmaAll, fetchBmaHistory } from '../src/sources/bma.mjs';
 import { fetchThaiwater } from '../src/sources/thaiwater.mjs';
 import { stationStatus, overallStatus, risingRate, worst } from '../src/status.mjs';
@@ -51,11 +52,14 @@ async function main() {
   const history = (await readJson(HISTORY, null)) ?? (await seed('history.json')) ?? {};
 
   // 1) ดึงข้อมูล 2 แหล่งพร้อมกัน — แหล่งไหนล่มก็ยังไปต่อได้
-  const [bma, tw, rainRes] = await Promise.allSettled([fetchBmaAll(), fetchThaiwater(), fetchRainDaily()]);
+  // SKIP_BMA=1 ใช้จำลองกรณีเว็บ กทม. บล็อก (เหมือนบน GitHub Actions)
+  const bmaFetch = process.env.SKIP_BMA ? Promise.reject(new Error('ข้าม (SKIP_BMA)')) : fetchBmaAll();
+  const [bma, tw, rainRes, pop] = await Promise.allSettled([bmaFetch, fetchThaiwater(), fetchRainDaily(), fetchPopnixAll()]);
   const sources = {
     bma: bma.status === 'fulfilled' ? { ok: true, count: bma.value.length } : { ok: false, error: String(bma.reason?.message || bma.reason) },
     tw: tw.status === 'fulfilled' ? { ok: true, count: tw.value.length } : { ok: false, error: String(tw.reason?.message || tw.reason) },
     rain: rainRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(rainRes.reason?.message || rainRes.reason) },
+    popnix: pop.status === 'fulfilled' ? { ok: true, count: pop.value.length, used: 0, credit: POPNIX_CREDIT } : { ok: false, error: String(pop.reason?.message || pop.reason) },
   };
   // พยากรณ์ฝน: ดูวันนี้ + พรุ่งนี้
   const rainDays = rainRes.status === 'fulfilled' ? rainRes.value : [];
@@ -67,6 +71,35 @@ async function main() {
   // สถานีที่ดึงไม่ได้รอบนี้ ใช้ค่าล่าสุดจากรอบก่อน (จะถูกนับเป็น "ข้อมูลเก่า" เองเมื่อเกินเวลา)
   const prevStations = new Map((prev?.nodes || []).flatMap((n) => n.stations).map((s) => [s.key, s]));
 
+  // แหล่งสำรอง POPNIX: ถ้าดึง กทม. ตรงไม่ได้ (หรือของ POPNIX ใหม่กว่า) ใช้ค่าจากสถานี POPNIX ที่ตำแหน่งตรงกัน
+  const popMatch = new Map();
+  for (const node of NODES) {
+    for (const ref of node.stations) {
+      if (ref.src !== 'bma' || pop.status !== 'fulfilled') continue;
+      const key = `bma:${ref.id}`;
+      const p = matchByLocation(pop.value, ref.lat, ref.lon);
+      if (!p || p.wl === null || !p.time) continue;
+      popMatch.set(key, p);
+      const direct = index.get(key);
+      if (direct?.time && direct.time >= p.time) continue; // ของ กทม. ตรงใหม่กว่า/เท่ากัน
+      const base = direct || prevStations.get(key) || { key, src: 'bma', id: ref.id, name: ref.name || p.name, isGate: false, wlOut: null };
+      index.set(key, {
+        ...base,
+        key, src: 'bma', id: ref.id,
+        name: base.name && base.name !== key ? base.name : p.name,
+        lat: ref.lat, lon: ref.lon,
+        time: p.time, wl: p.wl, wlOut: null,
+        bank: p.bank ?? base.bank ?? null,
+        warning: p.warning, critical: p.critical,
+        maxToday: p.maxToday, maxYesterday: p.maxYesterday,
+        agencyStatus: null,
+        via: 'POPNIX',
+        url: 'https://flood.pop.in.th',
+      });
+      sources.popnix.used++;
+    }
+  }
+
   // 2) ประวัติ: เติมจากรอบนี้ + เติมย้อนหลังจากหน้า กทม. ถ้ามีไม่ถึง 6 ชม.
   for (const node of NODES) {
     for (const ref of node.stations) {
@@ -76,10 +109,15 @@ async function main() {
       if (s?.time && s.wl !== null) pts.push([s.time, s.wl]);
       let h = mergeHistory(history[key] || [], pts, cutoff);
       const span = h.length ? (h.at(-1)[0] - h[0][0]) / 3600e3 : 0;
-      if (ref.src === 'bma' && sources.bma.ok && span < 6 && !s?.url?.includes('bmawaterflow')) {
+      if (ref.src === 'bma' && span < 6) {
         try {
-          h = mergeHistory(h, await fetchBmaHistory(ref.id), cutoff);
-          await sleep(800);
+          if (sources.bma.ok && !s?.via && !s?.url?.includes('bmawaterflow')) {
+            h = mergeHistory(h, await fetchBmaHistory(ref.id), cutoff);
+            await sleep(800);
+          } else if (popMatch.has(key)) {
+            h = mergeHistory(h, await fetchPopnixHistory(popMatch.get(key).popId), cutoff);
+            await sleep(300);
+          }
         } catch (err) {
           console.warn(`  เติมประวัติ ${key} ไม่ได้: ${err.message}`);
         }
@@ -92,7 +130,7 @@ async function main() {
   const nodes = NODES.map((node) => {
     const stations = node.stations.map((ref) => {
       const key = `${ref.src}:${ref.id}`;
-      const s = index.get(key) || prevStations.get(key) || { key, src: ref.src, id: ref.id, name: key, wl: null, time: null };
+      const s = index.get(key) || prevStations.get(key) || { key, src: ref.src, id: ref.id, name: ref.name || key, lat: ref.lat, lon: ref.lon, wl: null, time: null };
       const base = s;
       const rate = risingRate(history[key]);
       const st = stationStatus(base, rate, STALE_MIN[ref.src === 'tw' ? 'thaiwater' : 'bma'], now);
@@ -135,12 +173,12 @@ async function main() {
 
   // สรุปบนหน้าจอ
   console.log(`[${new Date(now).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}] สถานะรวม: ${overall.status} — ${overall.reasons.join(' / ')}`);
-  console.log(`  แหล่งข้อมูล: กทม. ${sources.bma.ok ? '✓ ' + sources.bma.count : '✗ ' + sources.bma.error} · ThaiWater ${sources.tw.ok ? '✓ ' + sources.tw.count : '✗ ' + sources.tw.error} · ฝน ${sources.rain.ok ? '✓ ' + rainDays.map((d) => `${d.date.slice(5)} ${d.mm}มม./${d.prob}%`).join(', ') : '✗ ' + sources.rain.error}`);
+  console.log(`  แหล่งข้อมูล: กทม. ${sources.bma.ok ? '✓ ' + sources.bma.count : '✗ ' + sources.bma.error} · POPNIX ${sources.popnix.ok ? '✓ ใช้ ' + sources.popnix.used + ' สถานี' : '✗ ' + sources.popnix.error} · ThaiWater ${sources.tw.ok ? '✓ ' + sources.tw.count : '✗ ' + sources.tw.error} · ฝน ${sources.rain.ok ? '✓ ' + rainDays.map((d) => `${d.date.slice(5)} ${d.mm}มม./${d.prob}%`).join(', ') : '✗ ' + sources.rain.error}`);
   for (const n of nodes) {
     console.log(`  ${n.status.padEnd(7)} ${n.name}`);
     for (const s of n.stations) {
       const r = s.rate === null ? '' : ` ${s.rate >= 0 ? '+' : ''}${Math.round(s.rate * 100)}ซม./ชม.`;
-      console.log(`           ${s.status.padEnd(7)} ${s.name} wl=${s.wl ?? '-'} ตลิ่ง=${s.bank ?? '-'}${r} (${s.reason}) จุดประวัติ=${history[s.key]?.length ?? 0}`);
+      console.log(`           ${s.status.padEnd(7)} ${s.via ? '[POPNIX] ' : ''}${s.name} wl=${s.wl ?? '-'} ตลิ่ง=${s.bank ?? '-'}${r} (${s.reason}) จุดประวัติ=${history[s.key]?.length ?? 0}`);
     }
   }
 

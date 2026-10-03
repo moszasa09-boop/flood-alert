@@ -77,3 +77,11 @@ test('พยากรณ์ฝนหนัก → อย่างน้อยเ
   assert.equal(overallStatus(g, false, { heavy: false, mm: 10 }).status, 'green');
   assert.equal(overallStatus(g, false, null).status, 'green');
 });
+
+import { matchByLocation, parsePopTime } from '../src/sources/popnix.mjs';
+test('POPNIX: จับคู่สถานีด้วยตำแหน่ง ไม่ใช่รหัส', () => {
+  const list = [{ popId: 20, name: 'ส.คลองขุนราชพินิจใจ', lat: 13.7, lon: 100.4 }, { popId: 125, name: 'ค.พระยาสุเรนทร์ ถ.จตุโชติ', lat: 13.87621, lon: 100.68614 }];
+  assert.equal(matchByLocation(list, 13.87621, 100.68614).popId, 125);
+  assert.equal(matchByLocation(list, 13.90121, 100.69049), null); // หนองระแหง: ใกล้สุด 2.8 กม. → ไม่จับคู่
+  assert.equal(parsePopTime('2026-10-03 19:35:00'), Date.UTC(2026, 9, 3, 12, 35));
+});

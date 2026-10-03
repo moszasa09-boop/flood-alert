@@ -112,7 +112,10 @@ function render() {
   $('#actions').innerHTML = `<h3>ควรทำตอนนี้</h3><ul>${acts.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>`;
   $('#updated').textContent = `อัปเดต ${fmtTime(DATA.generatedAt)}`;
 
-  const failed = Object.entries(DATA.sources).filter(([, s]) => !s.ok).map(([k]) => (k === 'bma' ? 'กทม.' : 'ThaiWater'));
+  const src = DATA.sources;
+  const failed = [];
+  if (!src.bma.ok && !(src.popnix?.ok && src.popnix.used > 0)) failed.push('กทม.');
+  if (!src.tw.ok) failed.push('ThaiWater');
   if (dataStale) showBanner(`⚠️ ข้อมูลไม่อัปเดตมา ${fmtAge(age)} — ระบบอาจขัดข้อง ช่วยเช็กน้ำเอง`);
   else if (failed.length) showBanner(`⚠️ ดึงข้อมูล ${failed.join(', ')} ไม่ได้รอบล่าสุด — บางสถานีอาจเป็นค่าเก่า`);
   else showBanner(null);
@@ -359,7 +362,7 @@ function stationHtml(s, i) {
   const meta = [
     s.time ? `วัดเมื่อ ${fmtTime(s.time)}` : '',
     s.distKm != null ? `ห่างบ้าน ${s.distKm} กม.` : '',
-    s.src === 'tw' ? 'ThaiWater (สสน.)' : 'กทม.',
+    s.src === 'tw' ? 'ThaiWater (สสน.)' : s.via === 'POPNIX' ? 'ข้อมูล: สำนักการระบายน้ำ กทม. ผ่าน POPNIX Flood' : 'กทม.',
     s.agencyStatus ? `หน่วยงานประเมิน: ${s.agencyStatus}` : '',
   ].filter(Boolean).join(' · ');
   const extra = [
@@ -437,8 +440,9 @@ function renderInfo() {
   $('#legend').innerHTML = LEGEND.map(([s, l, d]) => `<div class="legend-row" data-status="${s}"><span class="legend-dot"></span><span><b>${l}</b> — ${d}</span></div>`).join('');
   const src = DATA.sources;
   $('#sources').innerHTML = `
-    <div>สำนักการระบายน้ำ กทม.: ${src.bma.ok ? `✅ ${src.bma.count} สถานี` : `❌ ${esc(src.bma.error)}`}</div>
+    <div>สำนักการระบายน้ำ กทม. (ตรง): ${src.bma.ok ? `✅ ${src.bma.count} สถานี` : src.popnix?.ok ? '⚠️ ดึงตรงไม่ได้ → ใช้แหล่งสำรอง' : `❌ ${esc(src.bma.error)}`}</div>
     <div>ThaiWater (สสน.): ${src.tw.ok ? `✅ ${src.tw.count} สถานี` : `❌ ${esc(src.tw.error)}`}</div>
+    ${src.popnix ? `<div>สำรอง: ${src.popnix.ok ? `✅ ใช้ ${src.popnix.used} สถานี` : `❌ ${esc(src.popnix.error)}`} — <a href="https://flood.pop.in.th" target="_blank" rel="noopener">ข้อมูล: สำนักการระบายน้ำ กรุงเทพมหานคร ผ่าน POPNIX Flood (flood.pop.in.th)</a></div>` : ''}
     <div>ดึงข้อมูลล่าสุด: ${fmtTime(DATA.generatedAt)}</div>
     <div>พยากรณ์ฝน (Open-Meteo): ${src.rain ? (src.rain.ok ? '✅' : `❌ ${esc(src.rain.error)}`) : '—'}</div>
     <div>เรดาร์ฝน: RainViewer (โหลดสดในแท็บ "ฝน")</div>`;
