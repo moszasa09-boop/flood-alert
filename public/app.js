@@ -1,6 +1,7 @@
 // เว็บแอปเตือนภัยน้ำท่วม — อ่าน data/latest.json ที่ scripts/fetch.mjs สร้าง
 import { initRain } from './rain.js';
 import { renderRiver } from './river.js';
+import { whenLib } from './lib.js';
 const REFRESH_MS = 5 * 60 * 1000;
 const HOME_FALLBACK = { lat: 13.91, lon: 100.70 };
 const STALE_DATA_MIN = 75;           // ไฟล์ข้อมูลเก่ากว่านี้ = เตือนให้เช็กเอง
@@ -355,7 +356,8 @@ async function openSheet(nodeId) {
   if (window.gsap && !calm) gsap.from('#sheet-body', { y: 60, duration: 0.35, ease: 'power3.out', clearProps: 'transform' });
 
   const hist = await loadHistory();
-  if (!window.Chart) return;
+  if (!(await whenLib('Chart', 10000))) return;
+  if ($('#sheet').hidden) return; // ปิดการ์ดไปแล้วระหว่างรอ
   node.stations.forEach((s, i) => {
     const pts = hist[s.key] || [];
     const el = document.getElementById(`chart-${i}`);
@@ -428,7 +430,19 @@ function closeSheet() {
 
 /* ---------------- แผนที่ ---------------- */
 function renderMap() {
-  if (!window.L) { $('#map').innerHTML = '<p class="card muted">โหลดแผนที่ไม่ได้ (ต้องใช้อินเทอร์เน็ต)</p>'; return; }
+  if (!window.L) {
+    if (renderMap.waiting) return;
+    renderMap.waiting = true;
+    $('#map').innerHTML = '<p class="card muted">กำลังโหลดแผนที่…</p>';
+    whenLib('L').then((ok) => {
+      renderMap.waiting = false;
+      if (!ok) { $('#map').innerHTML = '<p class="card muted">โหลดแผนที่ไม่ได้ (ต้องใช้อินเทอร์เน็ต) — ลองเปิดแท็บนี้ใหม่</p>'; return; }
+      $('#map').innerHTML = '';
+      renderMap();
+      setTimeout(() => map && map.invalidateSize(), 50);
+    });
+    return;
+  }
   if (!map) {
     map = L.map('map', { zoomControl: true, attributionControl: true }).setView([DATA.home.lat, DATA.home.lon], 12);
     // OpenStreetMap ฟรี ไม่ต้องใช้ key — ทำโหมดมืดด้วย CSS (.dark-tiles)

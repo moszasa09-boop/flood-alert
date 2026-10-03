@@ -196,9 +196,10 @@
     <button data-tab="info"><span>ℹ️</span>ข้อมูล</button>
   </nav>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
+  <!-- async: แอปไม่ต้องรอไลบรารีก่อนแสดงสถานะ (เน็ตช้า/CDN ช้าจะไม่ค้าง "กำลังโหลด") -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" async></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" async></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" async></script>
   <script src="app.js" type="module"></script>
 </body>
 </html>

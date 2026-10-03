@@ -183,7 +183,19 @@ function rainAlerts(s, msgs, { rainWindow, radar, home, now }) {
     }
     return;
   }
-  // 4) เรดาร์: กลุ่มฝนกำลังเข้ามา (≤ 20 กม. และอาจถึงใน 60 นาที)
+  // 4) เรดาร์: กลุ่มฝนก่อตัวใหม่ใกล้บ้าน (≤ 10 กม.) — ไม่มีเวลาถึง
+  const nn = radar.nearest;
+  if (nn && nn.km <= 10 && radar.trend?.trend === 'new' && now - s.approachAt > APPROACH_GAP_MS) {
+    s.approachAt = now;
+    msgs.push({
+      title: `🌦️ มี${RAIN_LEVEL[nn.level]}ก่อตัวใกล้บ้าน ${Math.round(nn.km)} กม.`,
+      message: `ทิศ${dirName(nn.bearing)} (จากเรดาร์ ${hm(radar.time)} น.) — อาจตกที่บ้านได้ในไม่ช้า`,
+      priority: nn.level >= 4 ? 4 : 3,
+      tags: ['cloud_with_rain'],
+    });
+    return;
+  }
+  // 5) เรดาร์: กลุ่มฝนกำลังเข้ามา (≤ 20 กม. และอาจถึงใน 60 นาที)
   const n = radar.nearest;
   if (n && n.km <= 20 && radar.trend?.trend === 'closer' && radar.trend.etaMin != null && radar.trend.etaMin <= 60 && now - s.approachAt > APPROACH_GAP_MS) {
     s.approachAt = now;

@@ -34,6 +34,8 @@ test('ประมาณการเข้าใกล้', () => {
   assert.equal(approach({ nearest: { km: 20 } }, { nearest: { km: 30 } }, 30).trend, 'away');
   assert.equal(approach({ nearest: { km: 20 } }, { nearest: { km: 20.5 } }, 30).trend, 'steady');
   assert.equal(approach(null, { nearest: { km: 5 } }, 30), null);
+  // ค่าจริง 4 ต.ค. 02:10: 46 → 11 กม. ใน 30 นาที (= 70 กม./ชม.) = กลุ่มฝนก่อตัวใหม่ ไม่ใช่วิ่งเข้ามา
+  assert.deepEqual(approach({ nearest: { km: 46 } }, { nearest: { km: 11 } }, 30), { trend: 'new', speed: null, etaMin: null });
 });
 
 test('ช่วงฝนแรกจากพยากรณ์', () => {

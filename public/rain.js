@@ -1,4 +1,5 @@
 // แท็บ "ฝน": เรดาร์ฝนสด (RainViewer) + วิเคราะห์กลุ่มฝนรอบบ้าน + พยากรณ์รายชั่วโมง (Open-Meteo)
+import { whenLib } from './lib.js';
 import { classifyPixel, denoise, analyze, approach, firstRainWindow, pxKm, lonLatToPixel, dirName, RAIN_LEVEL } from './rain-core.js';
 
 const RADAR_API = 'https://api.rainviewer.com/public/weather-maps.json';
@@ -33,8 +34,11 @@ export function initRain(context) {
   started = true;
   $('#radar-play').addEventListener('click', () => (playing ? pause() : play()));
   $('#radar-slider').addEventListener('input', (e) => { pause(); showFrame(Number(e.target.value)); });
-  buildMap();
-  loadRadar();
+  loadRadar(); // วิเคราะห์ฝนได้ทันที ไม่ต้องรอไลบรารีแผนที่
+  whenLib('L').then((ok) => {
+    buildMap(ok);
+    if (ok) { frames = []; loadRadar(); } // แผนที่พร้อมแล้ว → ใส่ภาพเรดาร์ลงแผนที่
+  });
   loadForecast();
   radarTimer = setInterval(loadRadar, RADAR_REFRESH_MS);
   fcTimer = setInterval(loadForecast, FORECAST_REFRESH_MS);
@@ -44,8 +48,8 @@ export function initRain(context) {
 }
 
 /* ---------------- แผนที่เรดาร์ ---------------- */
-function buildMap() {
-  if (!window.L) { $('#radar-map').innerHTML = '<p class="card muted">โหลดแผนที่ไม่ได้ (ต้องใช้อินเทอร์เน็ต)</p>'; return; }
+function buildMap(libOk = !!window.L) {
+  if (!libOk) { $('#radar-map').innerHTML = '<p class="card muted">โหลดแผนที่ไม่ได้ (ต้องใช้อินเทอร์เน็ต) — การวิเคราะห์ฝนด้านบนยังใช้ได้</p>'; return; }
   const { lat, lon } = ctx.home;
   map = L.map('radar-map', { zoomControl: true, maxZoom: 11, minZoom: 5 }).setView([lat, lon], 8);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -181,7 +185,8 @@ function renderNow(a, trend, time) {
       detail.push(trend.etaMin != null
         ? `กำลังเข้าใกล้ ~${Math.round(trend.speed)} กม./ชม. อาจถึงใน ~${trend.etaMin} นาที (ประมาณคร่าวๆ)`
         : `กำลังเข้าใกล้ช้าๆ`);
-    } else if (trend?.trend === 'away') detail.push('กำลังเคลื่อนออกห่าง');
+    } else if (trend?.trend === 'new') detail.push('มีกลุ่มฝนก่อตัวใหม่ใกล้บ้าน — บอกเวลาถึงไม่ได้');
+    else if (trend?.trend === 'away') detail.push('กำลังเคลื่อนออกห่าง');
     else if (trend?.trend === 'steady') detail.push('ระยะทรงตัวใน 30 นาทีที่ผ่านมา');
   } else {
     title = '☀️ ไม่มีฝนในรัศมี 100 กม.';
@@ -211,7 +216,7 @@ async function loadForecast() {
   }
 }
 
-function renderForecast(d) {
+async function renderForecast(d) {
   const now = Date.now();
   const hTimes = d.hourly.time.map(omTime);
   let from = hTimes.findIndex((t) => t + 3600e3 > now);
@@ -244,7 +249,7 @@ function renderForecast(d) {
   const labels = hTimes.slice(from, from + n);
   const prob = d.hourly.precipitation_probability.slice(from, from + n);
   const mm = d.hourly.precipitation.slice(from, from + n);
-  if (!window.Chart) return;
+  if (!(await whenLib('Chart', 10000))) return;
   fcChart?.destroy();
   fcChart = new Chart($('#fc-chart'), {
     data: {

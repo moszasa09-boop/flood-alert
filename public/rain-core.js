@@ -70,6 +70,8 @@ export function approach(prev, now, minutes) {
   if (!prev?.nearest || !now?.nearest || minutes <= 0) return null;
   const speed = ((prev.nearest.km - now.nearest.km) / minutes) * 60; // กม./ชม. (+ = เข้าใกล้)
   if (Math.abs(speed) < 3) return { trend: 'steady', speed };
+  // เร็วเกิน 50 กม./ชม. ไม่สมจริงสำหรับกลุ่มฝน → น่าจะเป็นกลุ่มฝนก่อตัวใหม่ใกล้บ้าน ไม่เดาเวลาถึง
+  if (speed > 50) return { trend: 'new', speed: null, etaMin: null };
   if (speed < 0) return { trend: 'away', speed };
   const etaMin = now.nearest.km <= 2.5 ? 0 : Math.round((now.nearest.km / speed) * 60);
   return { trend: 'closer', speed, etaMin: etaMin > 240 ? null : etaMin };

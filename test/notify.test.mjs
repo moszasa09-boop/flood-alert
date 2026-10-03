@@ -144,3 +144,9 @@ test('ส่งไม่ได้ → เก็บเข้าคิว แล�
   const r3 = await deliver('t', [], r1.outbox, min(200), ok); // ค้างเกิน 3 ชม. → ทิ้ง
   assert.match(r3.log.join(), /ทิ้งข้อความค้าง/);
 });
+
+test('เรดาร์: กลุ่มฝนก่อตัวใหม่ใกล้บ้าน → แจ้งโดยไม่เดาเวลาถึง', () => {
+  const r = run({ lastStatus: 'green' }, 'green', 0, { radar: { time: min(0), atHome: 0, nearest: { km: 8, bearing: 135, level: 3 }, trend: { trend: 'new', speed: null, etaMin: null } } });
+  assert.match(r.messages[0].title, /ก่อตัวใกล้บ้าน 8 กม/);
+  assert.doesNotMatch(r.messages[0].message, /นาที/);
+});
