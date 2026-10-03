@@ -1,3 +1,4 @@
+import { riverView, rainView, radarView, LIVE as LIVE_ST } from './fresh.js';
 // แท็บ "สรุป": Dashboard ระดับน้ำแบบเรียลไทม์
 const COLORS = { green: '#22e39a', yellow: '#ffd23f', orange: '#ff8a2a', red: '#ff3b5c', stale: '#6b7a94', unknown: '#6b7a94' };
 const ICON = { green: '✅', yellow: '⚠️', orange: '🟠', red: '🚨', stale: '⚪', unknown: '⚪' };
@@ -49,7 +50,7 @@ function sparkline(points, bank, color) {
 }
 
 function bindSpark(root, points) {
-  const svg = root.querySelector('.db-spark');
+  const svg = root?.querySelector('.db-spark');
   if (!svg || !points?.length) return;
   const tip = root.querySelector('.db-spark-tip');
   const cross = svg.querySelector('.db-cross');
@@ -113,40 +114,49 @@ export function renderDashboard(DATA, history, { stale = false } = {}) {
       sub: w ? `${esc(marginText(w))}<br><span class="muted">${esc(w.name)}</span>` : 'ไม่มีข้อมูลออนไลน์',
     }));
   }
-  const rv = DATA.river;
-  if (rv) {
-    const f = rv.front?.overflow;
-    tiles.push(tile({
+  const now = Date.now();
+  const RV = riverView(DATA.river, now);
+  if (RV.stations.length) {
+    const f = RV.front.overflow;
+    tiles.push(RV.liveCount === 0 ? tile({
       title: '🌊 แม่น้ำเจ้าพระยา',
-      status: S(f ? 'red' : rv.front?.near ? 'orange' : 'green'),
-      chipText: f ? 'ล้นตลิ่ง' : rv.front?.near ? 'ใกล้ล้น' : 'ปกติ',
-      value: `${rv.front?.overflowCount ?? 0}<small> จุดล้นตลิ่ง</small>`,
-      sub: f ? `ลงมาถึง <b>${esc(f.province || f.name)}</b>` : 'ยังไม่ล้นตลิ่ง',
+      status: 'unknown', chipText: 'ไม่มีข้อมูลสด',
+      value: '—', sub: `ยังประเมินไม่ได้${RV.lastSeen ? ` · ค่าล่าสุด ${hm(RV.lastSeen)}` : ''}`,
+    }) : tile({
+      title: '🌊 แม่น้ำเจ้าพระยา',
+      status: S(f ? 'red' : RV.front.near ? 'orange' : 'green'),
+      chipText: f ? 'ล้นตลิ่ง' : RV.front.near ? 'ใกล้ล้น' : 'ปกติ',
+      value: `${RV.front.overflowCount}<small> จุดล้นตลิ่ง</small>`,
+      sub: `${f ? `ลงมาถึง <b>${esc(f.province || f.name)}</b>` : 'ยังไม่ล้นตลิ่ง'} · วัด ${hm(RV.asOf)}`,
     }));
-    if (rv.damRelease?.flow) {
-      const v = rv.damRelease.flow;
-      tiles.push(tile({
-        title: '🚰 เขื่อนเจ้าพระยาปล่อยน้ำ',
-        status: stale ? 'stale' : 'info',
-        value: `${n0(v)}<small> ลบ.ม./วิ</small>`,
-        sub: 'ถึง กทม. ราว 2–3 วัน',
-      }));
-    }
   }
-  const rd = DATA.radar;
-  if (rd) {
-    const lv = ['ไม่มีฝน', 'ละอองฝน', 'ฝนเบา', 'ฝนปานกลาง', 'ฝนหนัก', 'ฝนหนักมาก'];
+  if (RV.dam) {
     tiles.push(tile({
-      title: '📡 ฝนตอนนี้ (เรดาร์)',
-      status: S(rd.atHome >= 4 ? 'orange' : rd.atHome >= 2 ? 'yellow' : 'green'),
-      value: rd.atHome >= 2 ? `${lv[rd.atHome]}` : 'ไม่มีฝน',
-      sub: rd.nearest ? `กลุ่มฝนใกล้สุด ${Math.round(rd.nearest.km)} กม. (${lv[rd.nearest.level]})` : 'ไม่มีฝนในรัศมี 100 กม.',
+      title: '🚰 เขื่อนเจ้าพระยาปล่อยน้ำ',
+      status: stale || !RV.dam.fresh ? 'stale' : 'info',
+      chipText: RV.dam.fresh ? null : 'ค่าเก่า',
+      value: `${n0(RV.dam.flow)}<small> ลบ.ม./วิ</small>`,
+      sub: RV.dam.fresh ? `ถึง กทม. ราว 2–3 วัน · ${hm(RV.dam.time)}` : `ค่า ณ ${hm(RV.dam.time)} — เก่าเกินจะใช้ได้`,
     }));
   }
-  const w = DATA.rain?.window;
-  tiles.push(tile({
+  const rd = radarView(DATA.radar, now);
+  const lv = ['ไม่มีฝน', 'ละอองฝน', 'ฝนเบา', 'ฝนปานกลาง', 'ฝนหนัก', 'ฝนหนักมาก'];
+  tiles.push(rd ? tile({
+    title: '📡 ฝนตอนนี้ (เรดาร์)',
+    status: S(rd.atHome >= 4 ? 'orange' : rd.atHome >= 2 ? 'yellow' : 'green'),
+    chipText: rd.atHome >= 2 ? 'มีฝน' : 'ไม่มีฝน',
+    value: rd.atHome >= 2 ? `${lv[rd.atHome]}` : 'ไม่มีฝน',
+    sub: `${rd.nearest ? `กลุ่มฝนใกล้สุด ${Math.round(rd.nearest.km)} กม. (${lv[rd.nearest.level]})` : 'ไม่มีฝนในรัศมี 100 กม.'} · ${hm(rd.time)}`,
+  }) : tile({ title: '📡 ฝนตอนนี้ (เรดาร์)', status: 'unknown', chipText: 'ไม่พร้อม', value: '—', sub: 'เรดาร์ไม่พร้อม — ดูแท็บ "ฝน" หรือเรดาร์ กทม.' }));
+  const RN = rainView(DATA.rain, now);
+  const w = RN.window;
+  tiles.push(!RN.ok ? tile({
+    title: '🌧️ ฝนครั้งถัดไป (พยากรณ์)', status: 'unknown', chipText: 'ไม่พร้อม',
+    value: '—', sub: 'พยากรณ์ไม่พร้อม — ยังประเมินไม่ได้',
+  }) : tile({
     title: '🌧️ ฝนครั้งถัดไป (พยากรณ์)',
     status: S(w ? (w.peakMm >= 10 ? 'orange' : 'yellow') : 'green'),
+    chipText: w ? 'มีฝน' : 'ไม่มีฝน',
     value: w ? `${hm(w.start)}–${hm(w.end + 3600e3)}` : 'ไม่มี',
     sub: w ? `~${w.totalMm} มม. · โอกาส ${w.maxProb}%` : 'ใน 12 ชม. ข้างหน้า',
   }));
@@ -164,10 +174,17 @@ export function renderDashboard(DATA, history, { stale = false } = {}) {
         <td>${chip(st)}</td></tr>`;
     }).join('');
 
-  const fresh = Math.round((Date.now() - DATA.generatedAt) / 60000);
+  const ageMin = Math.round((now - DATA.generatedAt) / 60000);
   const okSrc = Object.values(DATA.sources).filter((x) => x.ok).length;
+  const allSt = DATA.nodes.flatMap((n) => n.stations);
+  const liveSt = allSt.filter((s) => LIVE_ST.includes(s.status)).length;
+  // LIVE เฉพาะเมื่อรอบนี้ดึงข้อมูลได้จริง · ถ้ารอบนี้ล่มแต่ยังมีค่าคลองที่ไม่เก่า = "ใช้ค่าล่าสุด"
+  const isLive = !stale && liveSt > 0 && okSrc > 0;
+  const liveLabel = isLive ? 'LIVE' : !stale && liveSt > 0 ? 'ใช้ค่าล่าสุด (รอบนี้ดึงข้อมูลไม่ได้)' : 'ข้อมูลไม่สด';
   box.innerHTML = `
-    <div class="db-live ${stale ? 'is-stale' : ''}"><span class="db-dot"></span>${stale ? 'ข้อมูลไม่อัปเดต' : 'LIVE'} · อัปเดต ${hm(DATA.generatedAt)} (${fresh} นาทีก่อน) · แหล่งข้อมูลทำงาน ${okSrc}/${Object.keys(DATA.sources).length}</div>
+    <div class="db-live ${isLive ? '' : 'is-stale'}"><span class="db-dot"></span>${liveLabel}
+      · รอบประมวลผลล่าสุด ${hm(DATA.generatedAt)} (${ageMin} นาทีก่อน)
+      · สถานีคลองที่มีข้อมูลสด ${liveSt}/${allSt.length} · แหล่งข้อมูลทำงาน ${okSrc}/${Object.keys(DATA.sources).length}</div>
     ${hero}
     <div class="db-grid">${tiles.join('')}</div>
     <div class="glass card">

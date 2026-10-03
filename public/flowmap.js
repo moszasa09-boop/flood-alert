@@ -1,3 +1,4 @@
+import { riverView } from './fresh.js';
 // แท็บ "แผนที่": เส้นทางน้ำแบบรางรถไฟบนแผนที่จริง
 //   เส้นที่ 1 = แม่น้ำเจ้าพระยา (น้ำเหนือหลัก) นครสวรรค์ → อ่าวไทย
 //   เส้นที่ 2 = คลองฝั่งตะวันออก ระพีพัฒน์ → หกวา → บ้านเรา → แสนแสบ → ประเวศ → ทะเล
@@ -36,8 +37,9 @@ export function drawFlowMap(map, layer, DATA, { stale = false, calm = false } = 
   const bounds = [];
 
   // ---------- เส้นที่ 1: แม่น้ำเจ้าพระยา ----------
-  const rv = (DATA.river?.stations || []).filter((s) => s.lat != null);
-  const cp = rv.map((s) => ({ ...s, ll: [s.lat, s.lon], status: S(s.status) }));
+  // ประเมินความสดใหม่: สถานีเก่า/ค่าเพี้ยนเป็นเทา และป้าย "ล้นถึงตรงนี้" ใช้เฉพาะสถานีที่สด
+  const RV = riverView(DATA.river);
+  const cp = RV.stations.filter((s) => s.lat != null).map((s) => ({ ...s, ll: [s.lat, s.lon], status: S(s.status) }));
   if (cp.length) {
     const tail = { ll: SEA_CP, status: cp.at(-1).status };
     railLine(layer, [...cp, tail], { weight: 6, calm, label: '🌊 แม่น้ำเจ้าพระยา (น้ำเหนือ)' });
@@ -50,7 +52,7 @@ export function drawFlowMap(map, layer, DATA, { stale = false, calm = false } = 
       }
       bounds.push(s.ll);
     }
-    const f = DATA.river.front?.overflow;
+    const f = RV.front.overflow;
     if (f?.lat != null && !stale) {
       L.marker([f.lat, f.lon], { interactive: false, icon: L.divIcon({ className: 'front-label', html: '🌊 ล้นถึงตรงนี้', iconSize: [104, 22], iconAnchor: [-10, 30] }) }).addTo(layer);
     }

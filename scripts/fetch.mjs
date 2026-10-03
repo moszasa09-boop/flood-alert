@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HOME, NODES, STALE_MIN, HISTORY_HOURS, HEAVY_RAIN_MM, SOURCES } from '../src/config.mjs';
 import { fetchRainDaily, rainWindowAhead } from '../src/sources/openmeteo.mjs';
-import { fetchRiver } from '../src/sources/river.mjs';
+import { fetchRiver, refreshRiver } from '../src/sources/river.mjs';
 import { fetchRadarNow } from '../src/sources/radar.mjs';
 import { decide, deliver } from '../src/notify.mjs';
 import { fetchPopnixAll, fetchPopnixHistory, matchByLocation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
@@ -175,15 +175,16 @@ async function main() {
   };
   const groups = { up: groupOf('up'), home: groupOf('home'), down: groupOf('down') };
   // เวลาวัดล่าสุดของสถานีบ้านที่เป็นแดง (ใช้ยืนยันแดงด้วยค่าวัดใหม่)
-  const homeRed = nodes.filter((n) => n.role === 'home').flatMap((n) => n.stations).filter((s) => s.status === 'red');
-  const homeRedTime = homeRed.length ? Math.max(...homeRed.map((s) => s.time)) : null;
-  const overall = overallStatus(groups, { candidateRedAt: prev?.overall?.candidateRedAt ?? null }, rain, homeRedTime);
+  // สถานีบ้านที่เป็นแดงรอบนี้ (key + เวลาวัด) — แดงต้องยืนยันด้วยค่าวัดใหม่ "ของสถานีเดียวกัน"
+  const homeRed = nodes.filter((n) => n.role === 'home').flatMap((n) => n.stations).filter((s) => s.status === 'red').map((s) => ({ key: s.key, time: s.time }));
+  const overall = overallStatus(groups, { candidateRed: prev?.overall?.candidateRed ?? null }, rain, homeRed);
 
   // แจ้งเตือนเข้ามือถือ (ntfy) — ส่งเฉพาะเมื่อมี NTFY_TOPIC (ตั้งใน GitHub Secrets)
   const homeNode = nodes.find((n) => n.role === 'home');
   const homeLive = homeNode.stations.filter((s) => ['green', 'yellow', 'orange', 'red'].includes(s.status));
   const homeStation = homeLive.find((s) => s.primary) || homeLive[0] || null;
-  const river = riverRes.status === 'fulfilled' ? riverRes.value : null;
+  // แม่น้ำ: ใช้ของรอบนี้ ถ้าดึงไม่ได้ใช้ของรอบก่อน แต่ประเมินอายุ/สีใหม่เสมอ (ค่าเก่าจะกลายเป็น stale)
+  const river = refreshRiver(riverRes.status === 'fulfilled' ? riverRes.value : prev?.river, now);
   const radar = radarRes.status === 'fulfilled' ? radarRes.value : null;
   const rainWindow = rainWindowAhead(rainDays.hourly, now);
   const front = river?.front?.overflow;
@@ -200,7 +201,7 @@ async function main() {
       frontName: front?.name ?? null,
       frontProvince: front?.province ?? null,
       overflowCount: river.front.overflowCount,
-      damFlow: river.damRelease?.flow ?? null,
+      damFlow: river.damRelease && !river.damRelease.stale ? river.damRelease.flow : null,
     } : null,
     now,
   });
@@ -225,9 +226,10 @@ async function main() {
     overall: { ...overall, since: prev?.overall?.status === overall.status ? prev.overall.since : now },
     previousStatus: prev?.overall?.status ?? null,
     groups,
-    rain: { ...rain, days: rainDays.map(({ date, mm, prob }) => ({ date, mm, prob })), window: rainWindow },
+    // ok/fetchedAt: ให้หน้าเว็บแยก "พยากรณ์ไม่พร้อม" ออกจาก "พยากรณ์แล้วไม่มีฝน"
+    rain: { ...rain, ok: sources.rain.ok, fetchedAt: sources.rain.ok ? now : null, days: rainDays.map(({ date, mm, prob }) => ({ date, mm, prob })), window: rainWindow },
     radar,
-    river: river ?? prev?.river ?? null,
+    river: river ?? null,
     notify: decision.state,
     nodes,
   };

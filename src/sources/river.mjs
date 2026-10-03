@@ -16,11 +16,18 @@ export const RIVER_PROVINCE = {
 export const DAM_CODE = '2744'; // ท้ายเขื่อนเจ้าพระยา (C.13) ชัยนาท
 const STALE_MIN = 180;
 
-const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+// แปลงเป็นตัวเลข: ค่าว่าง/ไม่ใช่ตัวเลข/Infinity → null (ห้ามปล่อย NaN ลง JSON)
+const num = (v) => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
 // สถานะสถานีแม่น้ำ จากระดับน้ำเทียบตลิ่ง (diff = น้ำ − ตลิ่ง, ม.)
+// ค่าไม่ใช่ตัวเลข / ไม่มีเวลา / เวลาในอนาคตเกิน 30 นาที → unknown (ไม่ตัดสิน ห้ามเป็นเขียว)
 export function riverStatus(diff, ageMin) {
-  if (diff == null) return 'unknown';
+  if (diff == null || !Number.isFinite(diff) || Math.abs(diff) > 50) return 'unknown';
+  if (ageMin == null || !Number.isFinite(ageMin) || ageMin < -30) return 'unknown';
   if (ageMin > STALE_MIN) return 'stale';
   if (diff >= 0) return 'red';        // ล้นตลิ่ง
   if (diff > -0.3) return 'orange';   // เหลือไม่ถึง 30 ซม.
@@ -41,15 +48,17 @@ export function normalizeRiver(json, now = Date.now()) {
     .sort((a, b) => a.order - b.order)
     .map((x) => {
       const time = parsePopTime(x.measured_at);
-      const diff = num(x.diff);
-      const ageMin = time ? (now - time) / 60000 : Infinity;
+      const wl = num(x.wl), bank = num(x.bank);
+      // diff จากต้นทาง ถ้าไม่มี/เพี้ยน คำนวณจาก wl − bank
+      const diff = num(x.diff) ?? (wl != null && bank != null ? Math.round((wl - bank) * 100) / 100 : null);
+      const ageMin = Number.isFinite(time) ? (now - time) / 60000 : null;
       return {
         code: String(x.code),
         name: (x.name || '').trim(),
         province: RIVER_PROVINCE[x.code] || RIVER_PROVINCE[String(x.code)] || null,
         agency: x.agency,
         lat: num(x.lat), lon: num(x.lng),
-        wl: num(x.wl), bank: num(x.bank), diff,
+        wl, bank, diff,
         trend: x.trend || null,
         flow: num(x.flow),
         time,
@@ -64,6 +73,28 @@ export function normalizeRiver(json, now = Date.now()) {
     front: riverFront(main),
     damRelease: dam?.v != null ? { flow: num(dam.v), time: parsePopTime(dam.as_of), src: dam.src } : null,
     rama8: rama8 ? { flow: num(rama8.flow), avg: num(rama8.avg_flow), time: parsePopTime(rama8.measured_at) } : null,
+  };
+}
+
+const DAM_STALE_MIN = 6 * 60;
+
+// ประเมินความสดใหม่ทุกครั้ง (ทั้งข้อมูลรอบนี้และค่าที่ยกมาจากรอบก่อน): สี, จุดล้นใต้สุด, ความสดของเขื่อน/พระราม 8
+export function refreshRiver(river, now = Date.now()) {
+  if (!river?.stations) return null;
+  const stations = river.stations.map((s) => {
+    const ageMin = Number.isFinite(s.time) ? (now - s.time) / 60000 : null;
+    return { ...s, status: riverStatus(s.diff, ageMin) };
+  });
+  const live = stations.filter((s) => ['green', 'yellow', 'orange', 'red'].includes(s.status));
+  const fresh = (x) => x && Number.isFinite(x.time) && now - x.time <= DAM_STALE_MIN * 60000 && x.time <= now + 30 * 60000;
+  return {
+    ...river,
+    stations,
+    front: riverFront(stations),
+    liveCount: live.length,
+    asOf: live.length ? Math.max(...live.map((s) => s.time)) : null,
+    damRelease: river.damRelease ? { ...river.damRelease, stale: !fresh(river.damRelease) } : null,
+    rama8: river.rama8 ? { ...river.rama8, stale: !fresh(river.rama8) } : null,
   };
 }
 

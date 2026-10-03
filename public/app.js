@@ -4,6 +4,7 @@ import { renderRiver } from './river.js';
 import { whenLib } from './lib.js';
 import { renderDashboard } from './dashboard.js';
 import { drawFlowMap } from './flowmap.js';
+import { rainView, radarView } from './fresh.js';
 const REFRESH_MS = 5 * 60 * 1000;
 const HOME_FALLBACK = { lat: 13.91, lon: 100.70 };
 const STALE_DATA_MIN = 75;           // ไฟล์ข้อมูลเก่ากว่านี้ = เตือนให้เช็กเอง
@@ -102,12 +103,19 @@ async function load() {
   render();
 }
 
+// กราฟย้อนหลังผูกกับรอบข้อมูล (generatedAt) — ข้อมูลรอบใหม่มาแล้วต้องโหลดกราฟใหม่เสมอ
+let HISTORY_FOR = null;
 async function loadHistory() {
-  if (HISTORY) return HISTORY;
+  const round = DATA?.generatedAt ?? null;
+  if (HISTORY && HISTORY_FOR === round) return HISTORY;
+  let h = {};
   try {
-    const res = await fetch(`data/history.json?t=${DATA?.generatedAt || Date.now()}`);
-    HISTORY = await res.json();
-  } catch { HISTORY = {}; }
+    const res = await fetch(`data/history.json?t=${round || Date.now()}`);
+    if (res.ok) h = await res.json();
+  } catch { /* ใช้ {} → กราฟขึ้นว่ายังไม่มีข้อมูล */ }
+  if ((DATA?.generatedAt ?? null) !== round) return loadHistory(); // ระหว่างรอ มีข้อมูลรอบใหม่เข้ามา
+  HISTORY = h;
+  HISTORY_FOR = round;
   return HISTORY;
 }
 
@@ -180,12 +188,13 @@ function renderRainCountdown() {
   const el = $('#rain-count');
   if (!DATA || STALE_VIEW) { el.hidden = true; return; }
   const now = Date.now();
-  const w = DATA.rain?.window;
-  const rd = DATA.radar;
+  const RN = rainView(DATA.rain, now);   // ok=false → พยากรณ์ไม่พร้อม (ห้ามตีความว่าไม่มีฝน)
+  const w = RN.window;
+  const rd = radarView(DATA.radar, now);
   const end = w ? w.end + 3600e3 : null;
   let html = '';
   let level = 'green';
-  if (rd && rd.atHome >= 2 && now - rd.time < 40 * 60000) {
+  if (rd && rd.atHome >= 2) {
     level = rd.atHome >= 4 ? 'orange' : 'yellow';
     html = `<b>☔ ฝนกำลังตกที่บ้าน</b> <span class="muted">(เรดาร์ ${fmtHM(rd.time)})</span><br>` +
       (end && end > now ? `⏹️ คาดว่าจะหยุดในอีก <b class="rc-num">${durTxt(end - now)}</b> · ราว ${fmtHM(end)}` : '⏹️ ยังบอกเวลาหยุดไม่ได้');
@@ -196,8 +205,11 @@ function renderRainCountdown() {
   } else if (w && end > now) {
     level = 'yellow';
     html = `<b>🌦️ พยากรณ์ว่ามีฝนช่วงนี้</b> ถึงราว ${fmtHM(end)} (อีก ${durTxt(end - now)})<br><span class="muted">เรดาร์ยังไม่เห็นฝนเหนือบ้าน</span>`;
+  } else if (!RN.ok) {
+    level = 'stale';
+    html = `<b>❓ พยากรณ์ฝนไม่พร้อม — ยังประเมินไม่ได้</b>${rd ? (rd.nearest ? ` <span class="muted">· เรดาร์: กลุ่มฝนใกล้สุด ${Math.round(rd.nearest.km)} กม.</span>` : ' <span class="muted">· เรดาร์: ไม่มีฝนในรัศมี 100 กม.</span>') : ' <span class="muted">· เรดาร์ไม่พร้อมด้วย</span>'}`;
   } else {
-    html = `<b>☀️ 12 ชม. ข้างหน้ายังไม่มีฝนที่บ้าน</b>${rd?.nearest ? ` <span class="muted">· กลุ่มฝนใกล้สุด ${Math.round(rd.nearest.km)} กม.</span>` : ''}`;
+    html = `<b>☀️ 12 ชม. ข้างหน้ายังไม่มีฝนที่บ้าน</b> <span class="muted">(พยากรณ์ ${fmtHM(DATA.rain.fetchedAt)})</span>${rd?.nearest ? ` <span class="muted">· กลุ่มฝนใกล้สุด ${Math.round(rd.nearest.km)} กม.</span>` : ''}`;
   }
   el.dataset.status = level;
   el.innerHTML = html;

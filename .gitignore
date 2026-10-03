@@ -3,3 +3,7 @@ node_modules/
 *.tmp
 .claude/
 public/data/*.json
+# รายงานทดสอบภายใน (ไม่เผยแพร่)
+*-retest-*.md
+work/
+outputs/

@@ -60,11 +60,11 @@ export function stationStatus({ wl, bank, time }, rate, staleMin, now = Date.now
 }
 
 // สถานะรวมของบ้าน จากสถานะแต่ละกลุ่ม (up / home / down)
-// แดงต้องยืนยันด้วย "ค่าวัดใหม่" — ไม่ใช่แค่รันซ้ำแล้วได้ค่าเดิม
-//   prev.candidateRedAt: เวลาวัดของค่าแรกที่เห็นแดง (เก็บจากรอบก่อน)
-//   homeRedTime: เวลาวัดล่าสุดของสถานีบ้านที่เป็นแดงในรอบนี้
+// แดงต้องยืนยันด้วย "ค่าวัดใหม่ของสถานีเดียวกัน" — ไม่ใช่รันซ้ำแล้วได้ค่าเดิม หรือสลับไปสถานีสำรอง
+//   prev.candidateRed: { key, at } สถานีและเวลาวัดของค่าแรกที่เห็นแดง (เก็บจากรอบก่อน)
+//   homeRed: [{ key, time }] สถานีบ้านที่เป็นแดงในรอบนี้
 // rain: { heavy: bool, mm, date } จากพยากรณ์ฝน 2 วัน (ไม่บังคับ)
-export function overallStatus({ up, home, down }, prev = {}, rain = null, homeRedTime = null) {
+export function overallStatus({ up, home, down }, prev = {}, rain = null, homeRed = []) {
   const reasons = [];
   let status = 'green';
   const bump = (s, why) => {
@@ -76,17 +76,23 @@ export function overallStatus({ up, home, down }, prev = {}, rain = null, homeRe
     // ไม่มีข้อมูลคลองใกล้บ้าน → ไม่ฟันธงว่าปลอดภัย
     return {
       status: 'unknown',
-      candidateRedAt: null,
+      candidateRed: null,
       reasons: ['ดึงข้อมูลคลองใกล้บ้านไม่ได้ — ช่วยดูคลองหนองระแหงด้วยตาเอง'],
     };
   }
 
-  let candidateRedAt = null;
+  let candidateRed = null;
   if (home === 'red') {
-    const first = prev?.candidateRedAt ?? null;
-    candidateRedAt = first ?? homeRedTime;
-    if (first != null && homeRedTime != null && homeRedTime > first) bump('red', 'คลองใกล้บ้านถึงตลิ่ง');
-    else bump('orange', 'คลองใกล้บ้านถึงตลิ่ง (รอยืนยันจากค่าวัดถัดไป)');
+    const first = prev?.candidateRed ?? null;
+    const same = first ? homeRed.find((r) => r.key === first.key) : null;
+    if (same && same.time > first.at) {
+      candidateRed = first;
+      bump('red', 'คลองใกล้บ้านถึงตลิ่ง');
+    } else {
+      const newest = [...homeRed].sort((a, b) => b.time - a.time)[0] || null;
+      candidateRed = same ? first : newest ? { key: newest.key, at: newest.time } : null;
+      bump('orange', 'คลองใกล้บ้านถึงตลิ่ง (รอยืนยันจากค่าวัดถัดไป)');
+    }
   } else if (home === 'orange') bump('orange', 'คลองใกล้บ้านใกล้ตลิ่ง');
   else if (home === 'yellow') bump('yellow', 'คลองใกล้บ้านสูงกว่าปกติ');
 
@@ -98,7 +104,7 @@ export function overallStatus({ up, home, down }, prev = {}, rain = null, homeRe
   if (rain?.heavy) bump('yellow', `พยากรณ์ฝนหนัก ${Math.round(rain.mm)} มม.`);
 
   if (!reasons.length) reasons.push('คลองทุกจุดยังต่ำกว่าตลิ่ง');
-  return { status, candidateRedAt, reasons };
+  return { status, candidateRed, reasons };
 }
 
 const cm = (m) => `${Math.round(m * 100)} ซม.`;

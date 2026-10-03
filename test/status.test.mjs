@@ -34,16 +34,21 @@ test('สถานะรวม', () => {
   assert.equal(overallStatus({ up: 'green', home: 'green', down: 'green' }).status, 'green');
   assert.equal(overallStatus({ up: 'orange', home: 'green', down: 'green' }).status, 'yellow');
   assert.equal(overallStatus({ up: 'orange', home: 'green', down: 'red' }).status, 'orange');
-  // แดงต้องยืนยันด้วยค่าวัดใหม่
+  // แดงต้องยืนยันด้วยค่าวัดใหม่ของสถานีเดียวกัน
   const g = { up: 'green', home: 'red', down: 'green' };
-  const first = overallStatus(g, {}, null, 1000);
+  const A = (time) => [{ key: 'bma:126', time }];
+  const first = overallStatus(g, {}, null, A(1000));
   assert.equal(first.status, 'orange');
-  assert.equal(first.candidateRedAt, 1000);
-  assert.equal(overallStatus(g, { candidateRedAt: 1000 }, null, 1000).status, 'orange'); // ค่าเดิม → ยังไม่ยืนยัน
-  const second = overallStatus(g, { candidateRedAt: 1000 }, null, 1600);                   // ค่าใหม่ → แดง
+  assert.deepEqual(first.candidateRed, { key: 'bma:126', at: 1000 });
+  assert.equal(overallStatus(g, { candidateRed: first.candidateRed }, null, A(1000)).status, 'orange'); // ค่าเดิม
+  const second = overallStatus(g, { candidateRed: first.candidateRed }, null, A(1600));                 // ค่าใหม่ → แดง
   assert.equal(second.status, 'red');
-  assert.equal(overallStatus(g, { candidateRedAt: second.candidateRedAt }, null, 1600).status, 'red'); // รันซ้ำค่าเดิมหลังยืนยัน → ยังแดง
-  assert.equal(overallStatus({ ...g, home: 'yellow' }, { candidateRedAt: 1000 }, null, null).candidateRedAt, null);
+  assert.equal(overallStatus(g, { candidateRed: second.candidateRed }, null, A(1600)).status, 'red');   // รันซ้ำหลังยืนยัน → ยังแดง
+  // สลับไปสถานีสำรอง (คนละ key) แม้เวลาใหม่กว่า → ยังไม่ยืนยัน
+  const sw = overallStatus(g, { candidateRed: first.candidateRed }, null, [{ key: 'bma:125', time: 2000 }]);
+  assert.equal(sw.status, 'orange');
+  assert.deepEqual(sw.candidateRed, { key: 'bma:125', at: 2000 });
+  assert.equal(overallStatus({ ...g, home: 'yellow' }, { candidateRed: first.candidateRed }).candidateRed, null);
   // ไม่มีข้อมูลบ้าน = unknown ไม่ใช่เขียว
   assert.equal(overallStatus({ up: 'green', home: 'stale', down: 'green' }).status, 'unknown');
 });

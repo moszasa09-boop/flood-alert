@@ -1,3 +1,4 @@
+import { riverView } from './fresh.js';
 // แท็บ "น้ำเหนือ": รางรถไฟแม่น้ำเจ้าพระยา นครสวรรค์ → กรุงเทพฯ
 const COLORS = { green: '#22e39a', yellow: '#ffd23f', orange: '#ff8a2a', red: '#ff3b5c', stale: '#6b7a94', unknown: '#6b7a94' };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -13,35 +14,43 @@ const km = (a, b, c, d) => {
 };
 
 // home: { lat, lon, status, station: { name, wl, bank } } — แสดง 🏠 ตรงระดับละติจูดของบ้าน
-export function renderRiver(river, { stale = false, home = null } = {}) {
+export function renderRiver(river, { stale = false, home = null } = {}) { // eslint-disable-line prefer-const
   const box = document.querySelector('#river-body');
   if (!river?.stations?.length) {
     box.innerHTML = '<div class="glass card"><p class="muted">ยังไม่มีข้อมูลแม่น้ำ — ลองใหม่ภายหลัง</p></div>';
     return;
   }
   const col = (s) => COLORS[stale ? 'stale' : s];
-  const st = river.stations;
-  const front = river.front?.overflow;
-  const near = river.front?.near;
-  const dam = river.damRelease;
+  // ประเมินความสดใหม่ทุกครั้ง: สถานีเก่า/ค่าเพี้ยน = เทา, จุดล้นคิดจากสถานีที่สดเท่านั้น
+  const V = riverView(river);
+  const st = V.stations;
+  const front = V.front.overflow;
+  const near = V.front.near;
+  const dam = V.dam;
+  const noLive = V.liveCount === 0;
+  if (noLive) stale = true;
 
   // ---------- สรุปด้านบน ----------
   let head, sub, level;
-  if (front) {
+  if (noLive) {
+    level = 'stale';
+    head = 'ข้อมูลน้ำเหนือไม่พร้อม — ยังประเมินไม่ได้';
+    sub = V.lastSeen ? `ค่าที่มีล่าสุดวัดเมื่อ ${fmtTime(V.lastSeen)} (เก่าเกินจะใช้ได้)` : 'ยังไม่มีข้อมูลจากสถานี';
+  } else if (front) {
     level = ['นนทบุรี', 'กรุงเทพฯ', 'ปทุมธานี'].includes(front.province) ? 'red' : 'orange';
-    head = `ล้นตลิ่งแล้ว ${river.front.overflowCount} จุด — ลงมาถึง${front.province ? ` ${front.province}` : ''}`;
-    sub = `ใต้สุดที่ ${front.name}${front.diff != null ? ` (เกินตลิ่ง ${Math.round(front.diff * 100)} ซม.)` : ''}`;
+    head = `ล้นตลิ่งแล้ว ${V.front.overflowCount} จุด — ลงมาถึง${front.province ? ` ${front.province}` : ''}`;
+    sub = `ใต้สุดที่ ${front.name}${front.diff != null ? ` (เกินตลิ่ง ${Math.round(front.diff * 100)} ซม.)` : ''} · วัดล่าสุด ${fmtTime(V.asOf)}`;
   } else if (near) {
     level = 'yellow';
     head = `ยังไม่ล้นตลิ่ง แต่ใกล้ล้นถึง${near.province ? ` ${near.province}` : ''}`;
-    sub = `${near.name} เหลือ ${Math.round(-near.diff * 100)} ซม.`;
+    sub = `${near.name} เหลือ ${Math.round(-near.diff * 100)} ซม. · วัดล่าสุด ${fmtTime(V.asOf)}`;
   } else {
     level = 'green';
-    head = 'แม่น้ำเจ้าพระยายังต่ำกว่าตลิ่งทุกจุด';
-    sub = '';
+    head = `แม่น้ำเจ้าพระยายังต่ำกว่าตลิ่ง (${V.liveCount} สถานีที่มีข้อมูลสด)`;
+    sub = `วัดล่าสุด ${fmtTime(V.asOf)}`;
   }
-  const damLine = dam?.flow ? `🚰 เขื่อนเจ้าพระยา (ชัยนาท) ปล่อย <b>${n0(dam.flow)}</b> ลบ.ม./วิ — น้ำใช้เวลาราว 2–3 วันถึงกรุงเทพฯ` : '';
-  const r8 = river.rama8?.flow ? `🌉 สะพานพระราม 8 ไหล ${n0(river.rama8.flow)} ลบ.ม./วิ${river.rama8.avg ? ` (เฉลี่ย ${n0(river.rama8.avg)})` : ''}` : '';
+  const damLine = dam ? `🚰 เขื่อนเจ้าพระยา (ชัยนาท) ปล่อย <b>${n0(dam.flow)}</b> ลบ.ม./วิ${dam.fresh ? ' — น้ำใช้เวลาราว 2–3 วันถึงกรุงเทพฯ' : ` <span class="muted">(ค่าเก่า ณ ${fmtTime(dam.time)})</span>`}` : '';
+  const r8 = V.rama8 ? `🌉 สะพานพระราม 8 ไหล ${n0(V.rama8.flow)} ลบ.ม./วิ${V.rama8.avg ? ` (เฉลี่ย ${n0(V.rama8.avg)})` : ''}${V.rama8.fresh ? '' : ` <span class="muted">(ค่าเก่า)</span>`}` : '';
 
   // ---------- ราง ----------
   const W = 360, X = 34, TOP = 26, GAP = 52, PROV_GAP = 30;
@@ -115,7 +124,7 @@ export function renderRiver(river, { stale = false, home = null } = {}) {
 
   box.innerHTML = `
     <div class="glass river-head" data-status="${stale ? 'stale' : level}">
-      <div class="rv-tag">🌊 น้ำเหนือตอนนี้ · แม่น้ำเจ้าพระยา</div>
+      <div class="rv-tag">🌊 ${noLive ? 'น้ำเหนือ' : 'น้ำเหนือตอนนี้'} · แม่น้ำเจ้าพระยา</div>
       <div class="rv-head">${esc(head)}</div>
       ${sub ? `<div class="rv-subhead">${esc(sub)}</div>` : ''}
       ${damLine ? `<div class="rv-line">${damLine}</div>` : ''}
