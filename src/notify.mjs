@@ -178,7 +178,7 @@ function rainAlerts(s, msgs, { rainWindow, radar, home, now }) {
     s.lastWetAt = radar.time;
     s.dryRuns = 0;
     const stopAt = s.rainWindowEnd != null && s.rainWindowEnd + 3600e3 > now ? s.rainWindowEnd + 3600e3 : null;
-    const stopTxt = stopAt ? `\n⏹️ คาดว่าจะหยุด${until(stopAt, now)} (ราว ${hm(stopAt)} น.)` : '\n⏹️ ยังบอกเวลาหยุดไม่ได้ (พยากรณ์ไม่ได้คาดว่าจะมีฝนช่วงนี้)';
+    const stopTxt = stopAt ? `\n⏹️ คาดว่าจะหยุดใน${until(stopAt, now)} (ราว ${hm(stopAt)} น.)` : '\n⏹️ ยังบอกเวลาหยุดไม่ได้ (พยากรณ์ไม่ได้คาดว่าจะมีฝนช่วงนี้)';
     s.rainUpdateAt = now;
     msgs.push({
       title: `🌧️ ${RAIN_LEVEL[radar.atHome]}เริ่มตกที่บ้านแล้ว (${hm(radar.time)})`,
@@ -197,7 +197,7 @@ function rainAlerts(s, msgs, { rainWindow, radar, home, now }) {
       const stopAt = s.rainWindowEnd != null && s.rainWindowEnd + 3600e3 > now ? s.rainWindowEnd + 3600e3 : null;
       msgs.push({
         title: `☔ ฝนยังตกอยู่ — ตกมาแล้ว ${dur(now - s.rainStartedAt)}`,
-        message: `${RAIN_LEVEL[radar.atHome]} (เรดาร์ ${hm(radar.time)} น.)\n${stopAt ? `⏹️ คาดว่าจะหยุด${until(stopAt, now)} (ราว ${hm(stopAt)} น.)` : '⏹️ ยังบอกเวลาหยุดไม่ได้'}\n${homeLine(home)}`,
+        message: `${RAIN_LEVEL[radar.atHome]} (เรดาร์ ${hm(radar.time)} น.)\n${stopAt ? `⏹️ คาดว่าจะหยุดใน${until(stopAt, now)} (ราว ${hm(stopAt)} น.)` : '⏹️ ยังบอกเวลาหยุดไม่ได้'}\n${homeLine(home)}`,
         priority: radar.atHome >= 4 ? 4 : 2,
         tags: ['umbrella'],
       });

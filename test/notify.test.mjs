@@ -169,12 +169,12 @@ test('ฝนเริ่มตก: บอกนับถอยหลังเว
   const w = { start: min(0), end: min(120), maxProb: 90, totalMm: 10, peakMm: 6 }; // หยุดราว 13:00
   let r = run({ lastStatus: 'green', rainWindowStart: min(0), rainWindowEnd: min(120) }, 'green', 10, { rainWindow: w, radar: { time: min(10), atHome: 3, nearest: { km: 0, bearing: 0, level: 3 } } });
   assert.match(r.messages[0].title, /เริ่มตกที่บ้านแล้ว/);
-  assert.match(r.messages[0].message, /คาดว่าจะหยุดอีก 2 ชม\. 50 นาที \(ราว 13:00 น\.\)/);
+  assert.match(r.messages[0].message, /คาดว่าจะหยุดในอีก 2 ชม\. 50 นาที \(ราว 13:00 น\.\)/);
   r = run(r.state, 'green', 40, { rainWindow: w, radar: { time: min(40), atHome: 3, nearest: { km: 0, bearing: 0, level: 3 } } });
   assert.equal(r.messages.length, 0);
   r = run(r.state, 'green', 70, { rainWindow: w, radar: { time: min(70), atHome: 3, nearest: { km: 0, bearing: 0, level: 3 } } });
   assert.match(r.messages[0].title, /ฝนยังตกอยู่ — ตกมาแล้ว 1 ชม\./);
-  assert.match(r.messages[0].message, /คาดว่าจะหยุดอีก 1 ชม\. 50 นาที/);
+  assert.match(r.messages[0].message, /คาดว่าจะหยุดในอีก 1 ชม\. 50 นาที/);
 });
 
 test('น้ำขึ้นเร็ว: รวมเป็นข้อความเดียว บอกเวลาถึงตลิ่ง และไม่แจ้งซ้ำภายใน 3 ชม.', () => {
