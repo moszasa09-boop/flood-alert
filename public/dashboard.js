@@ -139,6 +139,29 @@ export function renderDashboard(DATA, history, { stale = false } = {}) {
       sub: RV.dam.fresh ? `ถึง กทม. ราว 2–3 วัน · ${hm(RV.dam.time)}` : `ค่า ณ ${hm(RV.dam.time)} — เก่าเกินจะใช้ได้`,
     }));
   }
+  // แม่น้ำป่าสัก + เขื่อนป่าสัก (ต้นทางน้ำมาบ้านเรา)
+  const PV = riverView(DATA.pasak, now);
+  if (PV.stations.length) {
+    const pf = PV.front.overflow;
+    tiles.push(PV.liveCount === 0 ? tile({ title: '🏞️ แม่น้ำป่าสัก', status: 'unknown', chipText: 'ไม่มีข้อมูลสด', value: '—', sub: 'ยังประเมินไม่ได้' }) : tile({
+      title: '🏞️ แม่น้ำป่าสัก',
+      status: S(pf ? 'red' : PV.front.near ? 'orange' : 'green'),
+      chipText: pf ? 'ล้นตลิ่ง' : PV.front.near ? 'ใกล้ล้น' : 'ปกติ',
+      value: `${PV.front.overflowCount}<small> จุดล้นตลิ่ง</small>`,
+      sub: `${pf ? `ลงมาถึง <b>${esc(pf.name)}</b>${pf.branch ? ' (จุดแยกเข้าคลองระพีพัฒน์)' : ''}` : 'ยังไม่ล้นตลิ่ง'} · วัด ${hm(PV.asOf)}`,
+    }));
+  }
+  const pd = DATA.pasak?.dam;
+  if (pd) {
+    const fresh = pd.time && now - pd.time < 48 * 3600e3;
+    tiles.push(tile({
+      title: '💧 เขื่อนป่าสักชลสิทธิ์',
+      status: stale || !fresh ? 'stale' : 'info',
+      chipText: fresh ? null : 'ค่าเก่า',
+      value: `${pd.storagePct ?? '—'}<small>% ระดับเก็บกัก</small>`,
+      sub: `ปล่อย ${pd.releaseCms ?? '—'} · ไหลเข้า ${pd.inflowCms ?? '—'} ลบ.ม./วิ`,
+    }));
+  }
   const rd = radarView(DATA.radar, now);
   const lv = ['ไม่มีฝน', 'ละอองฝน', 'ฝนเบา', 'ฝนปานกลาง', 'ฝนหนัก', 'ฝนหนักมาก'];
   tiles.push(rd ? tile({

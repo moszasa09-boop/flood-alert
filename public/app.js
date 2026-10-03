@@ -1,10 +1,21 @@
 // เว็บแอปเตือนภัยน้ำท่วม — อ่าน data/latest.json ที่ scripts/fetch.mjs สร้าง
-import { initRain } from './rain.js';
-import { renderRiver } from './river.js';
 import { whenLib } from './lib.js';
-import { renderDashboard } from './dashboard.js';
-import { drawFlowMap } from './flowmap.js';
 import { rainView, radarView } from './fresh.js';
+
+// แท็บรอง (ฝน/น้ำเหนือ/แผนที่/สรุป) โหลดแยกตอนใช้ — ถ้าไฟล์ไหนพัง แอปหลัก (สถานะ/การ์ด/แผนผัง) ยังทำงาน
+const modules = {};
+function lazy(name) {
+  if (!modules[name]) modules[name] = import(`./${name}.js`).catch((err) => { delete modules[name]; throw err; });
+  return modules[name];
+}
+function tabError(sel, err) {
+  const el = document.querySelector(sel);
+  if (el) el.innerHTML = `<div class="glass card"><p class="muted">แท็บนี้โหลดไม่ได้ (${String(err?.message || err).slice(0, 80)}) — ลองปิดแล้วเปิดแอปใหม่ · สถานะหลักด้านบนยังใช้ได้</p></div>`;
+  console.error(err);
+}
+const renderRiver = (...a) => lazy('river').then((m) => m.renderRiver(...a)).catch((e) => tabError('#river-body', e));
+const renderDashboard = (...a) => lazy('dashboard').then((m) => m.renderDashboard(...a)).catch((e) => tabError('#dash-body', e));
+const initRain = (...a) => lazy('rain').then((m) => m.initRain(...a)).catch((e) => tabError('#rain-now', e));
 const REFRESH_MS = 5 * 60 * 1000;
 const HOME_FALLBACK = { lat: 13.91, lon: 100.70 };
 const STALE_DATA_MIN = 75;           // ไฟล์ข้อมูลเก่ากว่านี้ = เตือนให้เช็กเอง
@@ -163,7 +174,7 @@ function render() {
   renderInfo();
   renderRainCountdown();
   if (!$('#tab-dash').hidden) { renderDashboard(DATA, HISTORY, { stale: dataStale }); loadHistory().then((h) => { if (!$('#tab-dash').hidden) renderDashboard(DATA, h, { stale: dataStale }); }); }
-  if (!$('#tab-river').hidden) renderRiver(DATA.river, { stale: dataStale, home: homeForRiver() });
+  if (!$('#tab-river').hidden) renderRiver(DATA.river, riverOpts(dataStale));
   if (map || !$('#tab-map').hidden) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   handleAlerts(st, dataStale);
   if (window.gsap && !calm && !render.done) {
@@ -214,6 +225,13 @@ function renderRainCountdown() {
   el.dataset.status = level;
   el.innerHTML = html;
   el.hidden = false;
+}
+
+function riverOpts(stale) {
+  const upNodes = DATA.nodes.filter((n) => n.role === 'up').map((n) => n.status);
+  const RANKS = ['green', 'yellow', 'orange', 'red'];
+  const eastStatus = upNodes.reduce((a, b) => (RANKS.indexOf(b) > RANKS.indexOf(a) ? b : a), 'unknown');
+  return { stale, home: homeForRiver(), pasak: DATA.pasak, eastStatus };
 }
 
 function showBanner(msg) {
@@ -500,6 +518,10 @@ function renderMap() {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
   }
+  lazy('flowmap').then(({ drawFlowMap }) => drawMap(drawFlowMap)).catch((e) => tabError('#map', e));
+}
+
+function drawMap(drawFlowMap) {
   if (mapLayer) mapLayer.remove();
   mapLayer = L.layerGroup().addTo(map);
   const bounds = drawFlowMap(map, mapLayer, DATA, { stale: STALE_VIEW, calm });
@@ -592,7 +614,7 @@ function switchTab(tab) {
   if (tab === 'map' && DATA) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   if (tab === 'dash' && DATA) { renderDashboard(DATA, HISTORY, { stale: STALE_VIEW }); loadHistory().then((h) => { if (!$('#tab-dash').hidden) renderDashboard(DATA, h, { stale: STALE_VIEW }); }); }
   if (tab === 'rain') initRain({ home: DATA?.home || HOME_FALLBACK, calm });
-  if (tab === 'river' && DATA) renderRiver(DATA.river, { stale: STALE_VIEW, home: homeForRiver() });
+  if (tab === 'river' && DATA) renderRiver(DATA.river, riverOpts(STALE_VIEW));
   store.set('tab', tab);
 }
 

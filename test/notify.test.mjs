@@ -204,3 +204,14 @@ test('เกินตลิ่ง: แจ้งเมื่อยืนยัน
   r = run(r.state, 'yellow', 75, { stations: st(0.06, 70) });
   assert.match(r.messages[0].title, /กลับต่ำกว่าตลิ่งแล้ว/);
 });
+
+test('ป่าสัก: ล้นถึงจุดแยกเข้าคลองระพีพัฒน์ → แจ้งดัง · เขื่อนเปลี่ยนการปล่อยน้ำ ≥ 50 → แจ้ง', () => {
+  const p = (frontIdx, releaseCms, storagePct = 105) => ({ frontIdx, branchIdx: 9, frontName: 'สถานี', frontProvince: 'อยุธยา', overflowCount: 2, dam: { releaseCms, storagePct, inflowCms: 420 } });
+  let r = run({ lastStatus: 'yellow' }, 'yellow', 0, { pasak: p(8, 400) });   // รอบแรก จำไว้
+  assert.equal(r.messages.length, 0);
+  r = run(r.state, 'yellow', 15, { pasak: p(9, 420) });                        // ถึงจุดแยก (index 9)
+  assert.match(r.messages[0].title, /ถึงจุดแยกเข้าคลองระพีพัฒน์/);
+  assert.equal(r.messages[0].priority, 4);
+  r = run(r.state, 'yellow', 30, { pasak: p(9, 470) });                        // ปล่อยเพิ่ม 70 จากที่แจ้งไว้ (400)
+  assert.match(r.messages[0].title, /เพิ่มการปล่อยน้ำเป็น 470/);
+});

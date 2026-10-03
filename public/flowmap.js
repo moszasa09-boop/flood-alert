@@ -54,7 +54,31 @@ export function drawFlowMap(map, layer, DATA, { stale = false, calm = false } = 
     }
     const f = RV.front.overflow;
     if (f?.lat != null && !stale) {
-      L.marker([f.lat, f.lon], { interactive: false, icon: L.divIcon({ className: 'front-label', html: '🌊 ล้นถึงตรงนี้', iconSize: [104, 22], iconAnchor: [-10, 30] }) }).addTo(layer);
+      L.marker([f.lat, f.lon], { interactive: false, icon: L.divIcon({ className: 'front-label', html: '🌊 เจ้าพระยาล้นถึงนี่', iconSize: [124, 22], iconAnchor: [132, -4] }) }).addTo(layer);
+    }
+  }
+
+  // ---------- เส้นที่ 1b: แม่น้ำป่าสัก (ต้นทางน้ำมาบ้านเรา) ----------
+  const PV = riverView(DATA.pasak);
+  const pk = PV.stations.filter((s) => s.lat != null).map((s) => ({ ...s, ll: [s.lat, s.lon], status: S(s.status) }));
+  let rama6 = null;
+  if (pk.length) {
+    // ปลายสาย: นครหลวง → ไหลรวมเจ้าพระยาที่อยุธยา (ต่อเข้าสถานีเจ้าพระยาที่ใกล้สุด)
+    const join = cp.length ? cp.reduce((a, s) => (Math.hypot(s.ll[0] - pk.at(-1).ll[0], s.ll[1] - pk.at(-1).ll[1]) < Math.hypot(a.ll[0] - pk.at(-1).ll[0], a.ll[1] - pk.at(-1).ll[1]) ? s : a)) : null;
+    railLine(layer, join ? [...pk, { ll: join.ll, status: pk.at(-1).status }] : pk, { weight: 5, calm, label: '🏞️ แม่น้ำป่าสัก' });
+    let prov = null;
+    for (const s of pk) {
+      stationDot(layer, s, s.name, s.province ? ` · ${esc(s.province)}` : '');
+      if (s.province && s.province !== prov && !['อยุธยา'].includes(s.province)) {
+        prov = s.province;
+        L.marker(s.ll, { interactive: false, icon: L.divIcon({ className: 'prov-label right', html: `📍 ${esc(prov)}`, iconSize: [110, 18], iconAnchor: [-12, 9] }) }).addTo(layer);
+      }
+      if (s.branch) rama6 = s;
+      bounds.push(s.ll);
+    }
+    const pf = PV.front.overflow;
+    if (pf?.lat != null && !stale) {
+      L.marker([pf.lat, pf.lon], { interactive: false, icon: L.divIcon({ className: 'front-label', html: '🌊 ป่าสักล้นถึงนี่', iconSize: [110, 22], iconAnchor: [-12, 30] }) }).addTo(layer);
     }
   }
 
@@ -69,7 +93,10 @@ export function drawFlowMap(map, layer, DATA, { stale = false, calm = false } = 
     east.push(pt);
   }
   if (east.length) {
-    railLine(layer, [...east, { ll: SEA_EAST, status: east.at(-1).status }], { weight: 5, calm, label: '🏞️ คลองฝั่งตะวันออก → บ้านเรา', labelLeft: true });
+    // ทางแยก: เขื่อนพระรามหก (ป่าสัก) → คลองระพีพัฒน์ = ต้นเส้นคลองฝั่งตะวันออก
+    if (rama6) railLine(layer, [{ ll: rama6.ll, status: rama6.status }, east[0]], { weight: 4, calm });
+    // ไม่ใส่ป้ายชื่อเส้นตะวันออก: ช่วงอยุธยาจุดแน่น — ดูคำอธิบายใต้แผนที่
+    railLine(layer, [...east, { ll: SEA_EAST, status: east.at(-1).status }], { weight: 5, calm });
     for (const p of east) {
       if (p.role === 'home') continue;
       stationDot(layer, p, p.nodeName, `<br><span style="color:#8ea3c4">${esc(p.name)}</span>`);

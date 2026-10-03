@@ -7,6 +7,7 @@ import { HOME, NODES, STALE_MIN, HISTORY_HOURS, HEAVY_RAIN_MM, SOURCES } from '.
 import { fetchRainDaily, rainWindowAhead } from '../src/sources/openmeteo.mjs';
 import { fetchRiver, refreshRiver } from '../src/sources/river.mjs';
 import { fetchRadarNow } from '../src/sources/radar.mjs';
+import { buildPasak, fetchPasakDam, RAMA6_CODE } from '../src/sources/pasak.mjs';
 import { decide, deliver } from '../src/notify.mjs';
 import { fetchPopnixAll, fetchPopnixHistory, matchByLocation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
 import { fetchBmaAll, fetchBmaHistory } from '../src/sources/bma.mjs';
@@ -58,9 +59,9 @@ async function main() {
   // SKIP=bma,popnix,tw,rain ใช้จำลองกรณีแหล่งข้อมูลล่ม (ทดสอบ) — SKIP_BMA=1 เท่ากับ SKIP=bma
   const skip = new Set([...(process.env.SKIP || '').split(','), process.env.SKIP_BMA ? 'bma' : ''].filter(Boolean));
   const get = (name, fn) => (skip.has(name) ? Promise.reject(new Error(`ข้าม (SKIP=${name})`)) : fn());
-  const [bma, tw, rainRes, pop, riverRes, radarRes] = await Promise.allSettled([
+  const [bma, tw, rainRes, pop, riverRes, radarRes, pasakDamRes] = await Promise.allSettled([
     get('bma', fetchBmaAll), get('tw', fetchThaiwater), get('rain', fetchRainDaily), get('popnix', fetchPopnixAll),
-    get('river', fetchRiver), get('radar', fetchRadarNow),
+    get('river', fetchRiver), get('radar', fetchRadarNow), get('pasak', fetchPasakDam),
   ]);
   const sources = {
     bma: bma.status === 'fulfilled' ? { ok: true, count: bma.value.length } : { ok: false, error: String(bma.reason?.message || bma.reason) },
@@ -68,6 +69,7 @@ async function main() {
     rain: rainRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(rainRes.reason?.message || rainRes.reason) },
     river: riverRes.status === 'fulfilled' ? { ok: true, count: riverRes.value.stations.length } : { ok: false, error: String(riverRes.reason?.message || riverRes.reason) },
     radar: radarRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(radarRes.reason?.message || radarRes.reason) },
+    pasakDam: pasakDamRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(pasakDamRes.reason?.message || pasakDamRes.reason) },
     popnix: pop.status === 'fulfilled' ? { ok: true, count: pop.value.length, used: 0, credit: POPNIX_CREDIT } : { ok: false, error: String(pop.reason?.message || pop.reason) },
   };
   // พยากรณ์ฝน: ดูวันนี้ + พรุ่งนี้
@@ -186,6 +188,10 @@ async function main() {
   // แม่น้ำ: ใช้ของรอบนี้ ถ้าดึงไม่ได้ใช้ของรอบก่อน แต่ประเมินอายุ/สีใหม่เสมอ (ค่าเก่าจะกลายเป็น stale)
   const river = refreshRiver(riverRes.status === 'fulfilled' ? riverRes.value : prev?.river, now);
   const radar = radarRes.status === 'fulfilled' ? radarRes.value : null;
+  // แม่น้ำป่าสัก: สถานีจาก ThaiWater รอบนี้ (ถ้าไม่มี ใช้รอบก่อนแต่ประเมินอายุใหม่) + เขื่อนป่าสัก (ถ้าดึงไม่ได้ ใช้ค่าเดิม — หน้าเว็บดูวันที่เอง)
+  const pasakDam = pasakDamRes.status === 'fulfilled' ? pasakDamRes.value : prev?.pasak?.dam ?? null;
+  const pasak = refreshRiver(buildPasak(index, pasakDam, now) ?? (prev?.pasak ? { ...prev.pasak, dam: pasakDam } : null), now);
+  const pFront = pasak?.front?.overflow;
   const rainWindow = rainWindowAhead(rainDays.hourly, now);
   const front = river?.front?.overflow;
   const decision = decide(prev?.notify, {
@@ -195,6 +201,14 @@ async function main() {
     rainWindow,
     radar,
     rainToday: rainDays[0] ? { mm: rainDays[0].mm, prob: rainDays[0].prob } : null,
+    pasak: pasak ? {
+      frontIdx: pFront ? pasak.stations.indexOf(pFront) : null,
+      branchIdx: pasak.stations.findIndex((s) => s.code === RAMA6_CODE),
+      frontName: pFront?.name ?? null,
+      frontProvince: pFront?.province ?? null,
+      overflowCount: pasak.front.overflowCount,
+      dam: pasakDam && pasakDam.time && now - pasakDam.time < 48 * 3600e3 ? pasakDam : null,
+    } : null,
     stations: nodes.flatMap((n) => n.stations.map((s) => ({ key: s.key, name: s.name, role: n.role, status: s.status, wl: s.wl, bank: s.bank, margin: s.margin, rate: s.rate, time: s.time }))),
     river: river ? {
       frontIdx: front ? river.stations.indexOf(front) : null,
@@ -230,6 +244,7 @@ async function main() {
     rain: { ...rain, ok: sources.rain.ok, fetchedAt: sources.rain.ok ? now : null, days: rainDays.map(({ date, mm, prob }) => ({ date, mm, prob })), window: rainWindow },
     radar,
     river: river ?? null,
+    pasak: pasak ?? null,
     notify: decision.state,
     nodes,
   };
@@ -238,7 +253,7 @@ async function main() {
 
   // สรุปบนหน้าจอ
   console.log(`[${new Date(now).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}] สถานะรวม: ${overall.status} — ${overall.reasons.join(' / ')}`);
-  console.log(`  แหล่งข้อมูล: กทม. ${sources.bma.ok ? '✓ ' + sources.bma.count : '✗ ' + sources.bma.error} · POPNIX ${sources.popnix.ok ? '✓ ใช้ ' + sources.popnix.used + ' สถานี' : '✗ ' + sources.popnix.error} · แม่น้ำ ${sources.river.ok ? '✓ ' + sources.river.count : '✗ ' + sources.river.error} · เรดาร์ ${sources.radar.ok ? '✓' : '✗ ' + sources.radar.error} · ThaiWater ${sources.tw.ok ? '✓ ' + sources.tw.count : '✗ ' + sources.tw.error} · ฝน ${sources.rain.ok ? '✓ ' + rainDays.map((d) => `${d.date.slice(5)} ${d.mm}มม./${d.prob}%`).join(', ') : '✗ ' + sources.rain.error}`);
+  console.log(`  แหล่งข้อมูล: กทม. ${sources.bma.ok ? '✓ ' + sources.bma.count : '✗ ' + sources.bma.error} · POPNIX ${sources.popnix.ok ? '✓ ใช้ ' + sources.popnix.used + ' สถานี' : '✗ ' + sources.popnix.error} · แม่น้ำ ${sources.river.ok ? '✓ ' + sources.river.count : '✗ ' + sources.river.error} · เรดาร์ ${sources.radar.ok ? '✓' : '✗ ' + sources.radar.error} · ป่าสัก ${pasak ? `ล้น ${pasak.front.overflowCount} จุด` : '✗'}${pasakDam ? ` เขื่อน ${pasakDam.storagePct}% ปล่อย ${pasakDam.releaseCms} ลบ.ม./วิ` : ''} · ThaiWater ${sources.tw.ok ? '✓ ' + sources.tw.count : '✗ ' + sources.tw.error} · ฝน ${sources.rain.ok ? '✓ ' + rainDays.map((d) => `${d.date.slice(5)} ${d.mm}มม./${d.prob}%`).join(', ') : '✗ ' + sources.rain.error}`);
   for (const n of nodes) {
     console.log(`  ${n.status.padEnd(7)} ${n.name}`);
     for (const s of n.stations) {

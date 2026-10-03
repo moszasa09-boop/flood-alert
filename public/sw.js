@@ -1,5 +1,5 @@
 // Service worker: เปิดแอปได้แม้เน็ตหลุด (แสดงข้อมูลล่าสุดที่เคยโหลด)
-const VERSION = 'v6';
+const VERSION = 'v7';
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = `runtime-${VERSION}`;
 const SHELL_FILES = ['./', 'index.html', 'style.css', 'app.js', 'rain.js', 'rain-core.js', 'river.js', 'lib.js', 'dashboard.js', 'flowmap.js', 'fresh.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];

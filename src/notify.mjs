@@ -60,14 +60,16 @@ export function decide(state, ctx) {
     rainWindowStart: null, rainWindowEnd: null, raining: false, rainStartedAt: null, lastWetAt: null, dryRuns: 0, approachAt: 0,
     riverFrontIdx: undefined, damNotified: null,
     rainRemindFor: null, rainUpdateAt: 0, riseAt: {}, overbank: {},
+    pasakFrontIdx: undefined, pasakRelease: null, pasakFull: null,
     ...(state || {}),
   };
-  const { status, reasons = [], home, now, rainWindow, radar, rainToday, river, stations = [] } = ctx;
+  const { status, reasons = [], home, now, rainWindow, radar, rainToday, river, pasak, stations = [] } = ctx;
   const msgs = [];
   statusAlerts(s, msgs, { status, reasons, home, now });
   rainAlerts(s, msgs, { rainWindow, radar, home, now });
   stationAlerts(s, msgs, stations, now);
   riverAlerts(s, msgs, river);
+  pasakAlerts(s, msgs, pasak);
 
   // สรุปเช้า (วันละครั้ง ช่วง 07:00–07:59)
   if (thaiHour(now) === MORNING_HOUR && s.morningDate !== thaiDate(now)) {
@@ -75,6 +77,7 @@ export function decide(state, ctx) {
     const lines = [homeLine(home)];
     if (rainWindow) lines.push(`ฝน: น่าจะตก ${hm(rainWindow.start)}–${hm(rainWindow.end + 3600e3)} (โอกาส ${rainWindow.maxProb}%)`);
     else if (rainToday) lines.push(`ฝนวันนี้ ~${rainToday.mm} มม. (โอกาส ${rainToday.prob}%)`);
+    if (pasak?.dam) lines.push(`เขื่อนป่าสัก: ${pasak.dam.storagePct}% · ปล่อย ${pasak.dam.releaseCms} ลบ.ม./วิ`);
     if (river?.frontName) lines.push(`น้ำเหนือ: ล้นตลิ่ง ${river.overflowCount} จุด ใต้สุดที่ ${river.frontName}${river.frontProvince ? ` (${river.frontProvince})` : ''}`);
     if (reasons.length) lines.push(reasons.join(' · '));
     msgs.push({ title: `☀️ สรุปเช้า: ${EMOJI[status] || '⚪'} ${LABEL[status] || status}`, message: lines.join('\n'), priority: 2, tags: ['sunrise'] });
@@ -295,6 +298,44 @@ function stationAlerts(s, msgs, stations, now) {
   }
   for (const k of Object.keys(s.overbank)) if (!seen.has(k) && now - (s.overbank[k].firstAt || 0) > 24 * 3600e3) delete s.overbank[k];
   for (const k of Object.keys(s.riseAt)) if (now - s.riseAt[k] > 24 * 3600e3) delete s.riseAt[k];
+}
+
+// แม่น้ำป่าสัก (ต้นทางคลองระพีพัฒน์ → บ้านเรา) + เขื่อนป่าสักชลสิทธิ์
+const PASAK_RELEASE_STEP = 50; // ลบ.ม./วิ
+function pasakAlerts(s, msgs, p) {
+  if (!p) return;
+  if (p.frontIdx != null) {
+    if (s.pasakFrontIdx != null && p.frontIdx > s.pasakFrontIdx) {
+      const atBranch = p.branchIdx >= 0 && p.frontIdx >= p.branchIdx && s.pasakFrontIdx < p.branchIdx;
+      msgs.push({
+        title: atBranch ? '🌊 น้ำป่าสักล้นตลิ่งถึงจุดแยกเข้าคลองระพีพัฒน์แล้ว' : `🌊 น้ำป่าสักล้นตลิ่งลงมาถึง ${p.frontProvince || p.frontName}`,
+        message: `สถานี ${p.frontName}${p.frontProvince ? ` (${p.frontProvince})` : ''} ล้นตลิ่ง · แม่น้ำป่าสักล้นรวม ${p.overflowCount} จุด${atBranch ? '\nน้ำส่วนนี้ไหลเข้าคลองระพีพัฒน์ → รังสิต → หกวา → คลองแถวบ้านเรา เฝ้าระวังคลองฝั่งตะวันออก' : ''}`,
+        priority: atBranch ? 4 : 3,
+        tags: ['ocean'],
+      });
+    }
+    s.pasakFrontIdx = p.frontIdx;
+  } else if (s.pasakFrontIdx === undefined) s.pasakFrontIdx = null;
+
+  const d = p.dam;
+  if (!d || d.releaseCms == null) return;
+  if (s.pasakRelease == null) s.pasakRelease = d.releaseCms;
+  else if (Math.abs(d.releaseCms - s.pasakRelease) >= PASAK_RELEASE_STEP) {
+    const up = d.releaseCms > s.pasakRelease;
+    msgs.push({
+      title: `🚰 เขื่อนป่าสักชลสิทธิ์${up ? 'เพิ่ม' : 'ลด'}การปล่อยน้ำเป็น ${d.releaseCms} ลบ.ม./วิ`,
+      message: `จากเดิม ${s.pasakRelease} ลบ.ม./วิ · น้ำในเขื่อน ${d.storagePct}% ของระดับเก็บกัก${up ? '\nน้ำที่ปล่อยไหลลงแม่น้ำป่าสัก → คลองระพีพัฒน์ (ต้นทางน้ำฝั่งบ้านเรา)' : ''}`,
+      priority: up ? 3 : 2,
+      tags: ['ocean'],
+    });
+    s.pasakRelease = d.releaseCms;
+  }
+  const full = d.storagePct != null && d.storagePct >= 100;
+  if (s.pasakFull === null) s.pasakFull = full;
+  else if (full && !s.pasakFull) {
+    msgs.push({ title: `💧 เขื่อนป่าสักชลสิทธิ์น้ำเกินระดับเก็บกัก (${d.storagePct}%)`, message: `เขื่อนรับน้ำเพิ่มได้น้อย น้ำที่ไหลเข้า (${d.inflowCms} ลบ.ม./วิ) ต้องปล่อยออกเกือบทั้งหมด`, priority: 3, tags: ['warning'] });
+    s.pasakFull = true;
+  } else if (!full) s.pasakFull = false;
 }
 
 function riverAlerts(s, msgs, river) {
