@@ -85,9 +85,26 @@ h3 { font-size: .95rem; margin: 0 0 .5rem; }
 
 .ack { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; margin-bottom: 10px; border-color: var(--red); }
 
-.actions { padding: 14px 16px; margin-bottom: 12px; }
-.actions h3 { margin: 0 0 6px; font-size: .9rem; color: var(--muted); font-weight: 500; }
-.actions ul { margin: 0; padding-left: 1.2em; line-height: 1.6; }
+/* การ์ด "ต้องทำอะไรตอนนี้" — สีตามสถานะ */
+.actions {
+  padding: 16px 18px; margin-bottom: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--c) 24%, transparent), color-mix(in srgb, var(--c) 6%, transparent)), var(--glass);
+  border: 1.5px solid color-mix(in srgb, var(--c) 70%, transparent);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--c) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+.act-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.act-icon { font-size: 1.3rem; }
+.act-tag { background: var(--c); color: #071022; font-weight: 700; font-size: .8rem; padding: 3px 10px; border-radius: 999px; }
+.act-label { color: var(--muted); font-size: .8rem; margin-left: auto; }
+.act-head { font-size: 1.32rem; font-weight: 700; line-height: 1.35; color: var(--c); text-shadow: 0 0 16px color-mix(in srgb, var(--c) 45%, transparent); margin-bottom: 8px; }
+.actions[data-status="green"] .act-head { color: var(--text); }
+.actions ul { margin: 0; padding-left: 1.2em; line-height: 1.65; font-size: .92rem; color: var(--text); }
+.act-call { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.act-call .btn { font-size: 1.05rem; padding: 12px; }
+.actions[data-status="red"] { animation: alarm 1.2s ease-in-out infinite; }
+@keyframes alarm { 50% { box-shadow: 0 0 46px color-mix(in srgb, var(--c) 70%, transparent), inset 0 1px 0 rgba(255,255,255,.06); } }
+.calm .actions[data-status="red"] { animation: none; }
+@media (prefers-reduced-motion: reduce) { .actions[data-status="red"] { animation: none; } }
 
 .banner {
   position: sticky; top: 0; z-index: 20; text-align: center;

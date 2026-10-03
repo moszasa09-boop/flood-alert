@@ -11,12 +11,33 @@ const LABEL = {
   unknown: 'ข้อมูลไม่พอ', stale: 'ข้อมูลขัดข้อง',
 };
 const EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠', red: '🔴', unknown: '⚪', stale: '⚪' };
+// การ์ด "ต้องทำอะไรตอนนี้": หัวข้อใหญ่สั่งให้ทำ 1 ประโยค + รายละเอียด
 const ACTIONS = {
-  green: ['ใช้ชีวิตปกติ', 'เปิดแอปดูวันละครั้งพอ'],
-  yellow: ['เช็กของจำเป็น ไฟฉาย ยา เอกสาร', 'เอากระสอบทราย/แผ่นกั้นน้ำมาไว้ใกล้ประตู', 'ดูคลองหนองระแหงถี่ขึ้น (เช้า-เย็น) แล้วบันทึกไม้วัด'],
-  orange: ['ติดแผ่นกั้นน้ำ อุดท่อ/รูระบายในบ้าน', 'ยกของมีค่า เครื่องใช้ไฟฟ้าขึ้นชั้น 2', 'เตรียมย้ายรถไปที่สูง', 'ดูคลองทุก 1–2 ชม.'],
-  red: ['ย้ายรถไปที่สูงทันที', 'ตัดไฟชั้นล่าง', 'ขึ้นชั้น 2 พร้อมของจำเป็น', 'ต้องการช่วยเหลือ โทร 1555 / 1784'],
-  unknown: ['ระบบดึงข้อมูลคลองใกล้บ้านไม่ได้', 'ไปดูคลองหนองระแหงด้วยตาเอง', 'ติดตามข่าว กทม. / ปภ.'],
+  green: {
+    icon: '✅', tag: 'ปกติ',
+    head: 'น้ำยังไม่ขึ้นสูง อยู่ในสถานะปกติ',
+    items: ['ใช้ชีวิตได้ตามปกติ', 'เปิดแอปดูวันละครั้งพอ'],
+  },
+  yellow: {
+    icon: '⚠️', tag: 'เฝ้าระวัง',
+    head: 'เตรียมของเลย! เอากระสอบทรายมาวางกั้นไว้ตอนนี้',
+    items: ['เช็กของจำเป็น: ไฟฉาย ยา เอกสารสำคัญ', 'ดูคลองหนองระแหงเช้า-เย็น แล้วบันทึกไม้วัด'],
+  },
+  orange: {
+    icon: '🟠', tag: 'เตรียมพร้อม',
+    head: 'ยกของขึ้นที่สูงตอนนี้! ติดแผ่นกั้นน้ำ',
+    items: ['ยกของมีค่า เครื่องใช้ไฟฟ้าขึ้นชั้น 2', 'อุดท่อ/รูระบายในบ้าน', 'เตรียมย้ายรถไปที่สูง', 'ดูคลองทุก 1–2 ชม.'],
+  },
+  red: {
+    icon: '🚨', tag: 'อันตราย',
+    head: 'รีบย้ายรถและของออกเดี๋ยวนี้! น้ำกำลังมา',
+    items: ['ตัดไฟชั้นล่าง', 'ขึ้นชั้น 2 พร้อมของจำเป็น', 'ต้องการช่วยเหลือ โทร 1555 / 1784'],
+  },
+  unknown: {
+    icon: '❓', tag: 'ข้อมูลไม่พอ',
+    head: 'ระบบไม่มีข้อมูลล่าสุด — ไปดูคลองหนองระแหงด้วยตาเอง',
+    items: ['ติดตามข่าว กทม. / ปภ.', 'ถ้าน้ำสูงผิดปกติ ให้เตรียมของไว้ก่อน'],
+  },
 };
 const LEGEND = [
   ['green', 'ปกติ', 'คลองใกล้บ้านต่ำกว่าตลิ่งเกิน 50 ซม. และน้ำไม่ขึ้นเร็ว'],
@@ -108,8 +129,14 @@ function render() {
 
   for (const chip of document.querySelectorAll('.chip')) chip.dataset.status = dataStale ? 'stale' : DATA.groups[chip.dataset.g];
 
-  const acts = ACTIONS[st] || ACTIONS.unknown;
-  $('#actions').innerHTML = `<h3>ควรทำตอนนี้</h3><ul>${acts.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>`;
+  const act = ACTIONS[st] || ACTIONS.unknown;
+  const actBox = $('#actions');
+  actBox.dataset.status = st;
+  actBox.innerHTML = `
+    <div class="act-top"><span class="act-icon">${act.icon}</span><span class="act-tag">${esc(act.tag)}</span><span class="act-label">ต้องทำอะไรตอนนี้</span></div>
+    <div class="act-head">${esc(act.head)}</div>
+    <ul>${act.items.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
+    ${st === 'red' ? '<div class="act-call"><a class="btn btn-red" href="tel:1555">📞 1555</a><a class="btn btn-red" href="tel:1784">📞 1784</a></div>' : ''}`;
   $('#updated').textContent = `อัปเดต ${fmtTime(DATA.generatedAt)}`;
 
   const src = DATA.sources;

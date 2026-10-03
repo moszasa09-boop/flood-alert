@@ -6,10 +6,10 @@ const LABEL = { green: 'ปกติ', yellow: 'เฝ้าระวัง', or
 const EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠', red: '🔴', unknown: '⚪' };
 const PRIORITY = { green: 3, yellow: 3, orange: 4, red: 5, unknown: 4 }; // ntfy: 5 = ด่วน
 const ACTIONS = {
-  yellow: 'เตรียมกระสอบทราย/แผ่นกั้นน้ำไว้ใกล้ประตู · ดูคลองถี่ขึ้น',
-  orange: 'ติดแผ่นกั้นน้ำ อุดท่อ · ยกของขึ้นชั้น 2 · เตรียมย้ายรถ',
-  red: 'ย้ายรถทันที · ตัดไฟชั้นล่าง · ขึ้นชั้น 2 · ช่วยเหลือโทร 1555 / 1784',
-  green: 'ใช้ชีวิตปกติ',
+  yellow: 'เตรียมของเลย! เอากระสอบทรายมาวางกั้นไว้ตอนนี้',
+  orange: 'ยกของขึ้นที่สูงตอนนี้! ติดแผ่นกั้นน้ำ เตรียมย้ายรถ',
+  red: 'รีบย้ายรถและของออกเดี๋ยวนี้! ตัดไฟชั้นล่าง · ช่วยเหลือโทร 1555 / 1784',
+  green: 'น้ำยังไม่ขึ้นสูง ใช้ชีวิตได้ตามปกติ',
   unknown: 'ไปดูคลองหนองระแหงด้วยตาเอง',
 };
 const RED_REPEAT_MIN = 15;   // แดง: เตือนซ้ำทุก 15 นาที
@@ -38,7 +38,7 @@ export function decide(state, ctx) {
   const s = { lastStatus: null, pendingDown: null, redCount: 0, lastRedAt: 0, unknownRuns: 0, morningDate: null, rainAlertDate: null, ...(state || {}) };
   const { status, reasons = [], home, rainSoon, rainToday, now } = ctx;
   const msgs = [];
-  const body = (st) => [reasons.join(' · '), homeLine(home), `ควรทำ: ${ACTIONS[st]}`, 'ไม่ใช่ประกาศทางการ'].filter(Boolean).join('\n');
+  const body = (st) => [`👉 ${ACTIONS[st]}`, reasons.join(' · '), homeLine(home), 'ไม่ใช่ประกาศทางการ'].filter(Boolean).join('\n');
   const statusMsg = (st, prefix = '') => ({
     title: `${EMOJI[st]} ${prefix}${LABEL[st]} — น้ำท่วมคลองสามวา`,
     message: body(st),
