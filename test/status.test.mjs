@@ -26,7 +26,7 @@ test('ข้อมูลเก่า/ไม่มีข้อมูล ไม่
 test('อัตราขึ้น-ลง', () => {
   const h = [];
   for (let i = 0; i <= 36; i++) h.push([NOW - (36 - i) * 5 * 60000, 1.0 + i * 0.005]); // ขึ้น 6 ซม./ชม.
-  assert.ok(Math.abs(risingRate(h) - 0.06) < 1e-9);
+  assert.ok(Math.abs(risingRate(h) - 0.06) < 0.01); // ค่ากลางทำให้หน่วงเล็กน้อย
   assert.equal(risingRate(h.slice(-3)), null); // ข้อมูลสั้นเกิน
 });
 
@@ -91,4 +91,17 @@ test('สถานีไกล: ใกล้ตลิ่ง+กำลังข�
   assert.equal(stationStatus(fresh(0.27, 0.75), 0.023, 90, NOW, { risingOrange: false }).status, 'yellow');
   assert.equal(stationStatus(fresh(0.27, 0.75), 0.023, 90, NOW).status, 'orange'); // คลองใกล้บ้าน: ส้ม
   assert.equal(stationStatus(fresh(0.6, 0.75), 0, 90, NOW, { risingOrange: false }).status, 'orange'); // < 20 ซม.: ส้มเสมอ
+});
+
+test('อัตราขึ้น-ลง: ค่ากระโดดครั้งเดียวไม่ทำให้ดูเหมือนน้ำขึ้นเร็ว', () => {
+  // ข้อมูลจริงแสนแสบ-บางกะปิ 3 ต.ค.: ทรงตัว ~0.19 แต่มีค่ากระโดด 0.35 / 0.27
+  const h = [];
+  for (let i = 0; i <= 40; i++) h.push([NOW - (40 - i) * 5 * 60000, 0.19]);
+  h[h.length - 2][1] = 0.27; // 5 นาทีก่อน
+  h[h.length - 1][1] = 0.35; // ล่าสุดกระโดด
+  const r = risingRate(h);
+  assert.ok(Math.abs(r) < 0.02, `rate=${r}`);
+  // ขึ้นจริงต่อเนื่อง ยังจับได้
+  const up = h.map(([t], i) => [t, 1.0 + i * 0.005]);
+  assert.ok(Math.abs(risingRate(up) - 0.06) < 0.01);
 });

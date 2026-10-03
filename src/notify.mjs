@@ -77,8 +77,8 @@ export function decide(state, ctx) {
     s.pendingDown = null;
   }
 
-  // แดงค้าง: เตือนซ้ำ
-  if (s.lastStatus === 'red' && msgs.length === 0) {
+  // แดงค้าง: เตือนซ้ำเฉพาะเมื่อค่ารอบนี้ยังแดงจริง (ถ้ากำลังลดระดับ ไม่ส่ง "น้ำกำลังมา" ซ้ำ)
+  if (s.lastStatus === 'red' && status === 'red' && msgs.length === 0) {
     const gap = s.redCount < RED_REPEAT_MAX ? RED_REPEAT_MIN : 60;
     if (now - s.lastRedAt >= (gap - 2) * 60000) {
       s.redCount++;

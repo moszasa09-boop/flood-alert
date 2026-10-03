@@ -74,3 +74,11 @@ test('ข้อความคลองใกล้บ้าน', () => {
   assert.equal(homeLine(home), 'คลองใกล้บ้าน 1.32 ม. ต่ำกว่าตลิ่ง 28 ซม. (ขึ้น 3 ซม./ชม.)');
   assert.equal(homeLine({ wl: 1.7, bank: 1.6, rate: 0 }), 'คลองใกล้บ้าน 1.70 ม. เกินตลิ่ง 10 ซม.');
 });
+
+test('แดงกำลังลดระดับ: ไม่ส่ง "น้ำกำลังมา" ซ้ำ ระหว่างรอยืนยัน', () => {
+  let r = run({ lastStatus: 'orange' }, 'red', 0);
+  r = run(r.state, 'yellow', 15); // ค่าลดลงรอบแรก
+  assert.equal(r.messages.length, 0);
+  r = run(r.state, 'yellow', 30); // ยืนยัน
+  assert.match(r.messages[0].title, /ลดระดับ/);
+});

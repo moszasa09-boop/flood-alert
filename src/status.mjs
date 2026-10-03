@@ -6,11 +6,19 @@ export const rank = (s) => LEVELS.indexOf(s); // stale/unknown = -1
 export const worst = (list) =>
   list.reduce((a, b) => (rank(b) > rank(a) ? b : a), 'unknown');
 
-// อัตราขึ้น-ลง (ม./ชม.) จากจุดล่าสุดเทียบจุดที่ใกล้ "windowH ชม.ก่อน" ที่สุด
+// ค่ากลาง (median) ของจุดในช่วง ±25 นาทีรอบเวลา t — กันค่ากระโดดชั่วขณะ (เช่น 0.19 → 0.35 → 0.19)
+function medianAround(history, t, windowMin = 25) {
+  const vals = history.filter(([x]) => Math.abs(x - t) <= windowMin * 60000).map(([, v]) => v).sort((a, b) => a - b);
+  if (!vals.length) return null;
+  const m = vals.length >> 1;
+  return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2;
+}
+
+// อัตราขึ้น-ลง (ม./ชม.) จากจุดล่าสุดเทียบจุดที่ใกล้ "windowH ชม.ก่อน" ที่สุด (ใช้ค่ากลางรอบๆ ทั้งสองฝั่ง)
 // ต้องมีข้อมูลห่างกันอย่างน้อย 45 นาที ไม่งั้นคืน null
 export function risingRate(history, windowH = T.rateWindowH) {
   if (!history || history.length < 2) return null;
-  const [tLast, vLast] = history[history.length - 1];
+  const [tLast] = history[history.length - 1];
   const target = tLast - windowH * 3600e3;
   let best = null;
   for (const p of history) {
@@ -20,7 +28,7 @@ export function risingRate(history, windowH = T.rateWindowH) {
   if (!best) return null;
   const dtH = (tLast - best[0]) / 3600e3;
   if (dtH < 0.75) return null;
-  return (vLast - best[1]) / dtH;
+  return (medianAround(history, tLast) - medianAround(history, best[0])) / dtH;
 }
 
 // สถานะของสถานีเดียว

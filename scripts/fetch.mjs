@@ -53,9 +53,12 @@ async function main() {
   const history = (await readJson(HISTORY, null)) ?? (await seed('history.json')) ?? {};
 
   // 1) ดึงข้อมูล 2 แหล่งพร้อมกัน — แหล่งไหนล่มก็ยังไปต่อได้
-  // SKIP_BMA=1 ใช้จำลองกรณีเว็บ กทม. บล็อก (เหมือนบน GitHub Actions)
-  const bmaFetch = process.env.SKIP_BMA ? Promise.reject(new Error('ข้าม (SKIP_BMA)')) : fetchBmaAll();
-  const [bma, tw, rainRes, pop] = await Promise.allSettled([bmaFetch, fetchThaiwater(), fetchRainDaily(), fetchPopnixAll()]);
+  // SKIP=bma,popnix,tw,rain ใช้จำลองกรณีแหล่งข้อมูลล่ม (ทดสอบ) — SKIP_BMA=1 เท่ากับ SKIP=bma
+  const skip = new Set([...(process.env.SKIP || '').split(','), process.env.SKIP_BMA ? 'bma' : ''].filter(Boolean));
+  const get = (name, fn) => (skip.has(name) ? Promise.reject(new Error(`ข้าม (SKIP=${name})`)) : fn());
+  const [bma, tw, rainRes, pop] = await Promise.allSettled([
+    get('bma', fetchBmaAll), get('tw', fetchThaiwater), get('rain', fetchRainDaily), get('popnix', fetchPopnixAll),
+  ]);
   const sources = {
     bma: bma.status === 'fulfilled' ? { ok: true, count: bma.value.length } : { ok: false, error: String(bma.reason?.message || bma.reason) },
     tw: tw.status === 'fulfilled' ? { ok: true, count: tw.value.length } : { ok: false, error: String(tw.reason?.message || tw.reason) },
@@ -131,7 +134,9 @@ async function main() {
   const nodes = NODES.map((node) => {
     const stations = node.stations.map((ref) => {
       const key = `${ref.src}:${ref.id}`;
-      const s = index.get(key) || prevStations.get(key) || { key, src: ref.src, id: ref.id, name: ref.name || key, lat: ref.lat, lon: ref.lon, wl: null, time: null };
+      const found = index.get(key) || prevStations.get(key) || { key, src: ref.src, id: ref.id, wl: null, time: null };
+      // ชื่อ: ใช้ของแหล่งข้อมูล ถ้าไม่มี (หรือเป็นรหัส เช่น "bma:303" จากรอบเก่า) ใช้ชื่อใน config
+      const s = { ...found, name: found.name && found.name !== key ? found.name : ref.name || key, lat: found.lat ?? ref.lat, lon: found.lon ?? ref.lon };
       const base = s;
       const rate = risingRate(history[key]);
       const st = stationStatus(base, rate, STALE_MIN[ref.src === 'tw' ? 'thaiwater' : 'bma'], now, { risingOrange: node.role === 'home' });
