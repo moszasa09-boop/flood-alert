@@ -1,0 +1,14 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
+          curl -s -o /dev/null -w "plain %{http_code}\n" -X POST -d 'payload=x' https://weather.bangkok.go.th/water/PageMap/GoogleMap
+          curl -s -o /dev/null -w "browserUA %{http_code}\n" -A "$UA" -X POST -d 'payload=x' https://weather.bangkok.go.th/water/PageMap/GoogleMap
+          curl -s -o /dev/null -w "browserUA+ref %{http_code}\n" -A "$UA" -e https://weather.bangkok.go.th/water/ -X POST -d 'payload=x' https://weather.bangkok.go.th/water/PageMap/GoogleMap
+          curl -s -o /dev/null -w "detail page %{http_code}\n" -A "$UA" 'https://weather.bangkok.go.th/water/StationDetail?id=126'
+          curl -s -D - -o body.txt -A "$UA" 'https://weather.bangkok.go.th/water/' | head -15; head -c 400 body.txt
+          curl -s https://ipinfo.io/country
