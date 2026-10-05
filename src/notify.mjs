@@ -97,7 +97,7 @@ function statusAlerts(s, msgs, { status, reasons, home, now }) {
   // ข้อมูลไม่พอ: เตือนเมื่อเป็นติดกัน 2 รอบ (กันสะดุดชั่วคราว) และเตือนครั้งเดียว
   if (status === 'unknown') {
     s.unknownRuns++;
-    if (s.unknownRuns === 2) msgs.push({ ...statusMsg('unknown'), message: 'ระบบดึงข้อมูลคลองใกล้บ้านไม่ได้ — ช่วยดูคลองหนองระแหงเอง\nไม่ใช่ประกาศทางการ' });
+    if (s.unknownRuns === 2) msgs.push({ ...statusMsg('unknown'), message: `${reasons.length ? reasons.join('\n') : 'ระบบดึงข้อมูลคลองใกล้บ้านไม่ได้ — ช่วยดูคลองหนองระแหงเอง'}\nระบบยังเฝ้าน้ำเหนือ/ฝน/ทางระบายอยู่ และจะแจ้งเมื่อกลับมาใช้ได้\nไม่ใช่ประกาศทางการ` });
     return;
   }
   const wasUnknown = s.unknownRuns >= 2;

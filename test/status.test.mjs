@@ -88,7 +88,7 @@ test('พยากรณ์ฝนหนัก → อย่างน้อยเ
   assert.equal(overallStatus(g, false, null).status, 'green');
 });
 
-import { matchByLocation, parsePopTime } from '../src/sources/popnix.mjs';
+import { matchByLocation, matchStation, parsePopTime } from '../src/sources/popnix.mjs';
 test('POPNIX: จับคู่สถานีด้วยตำแหน่ง ไม่ใช่รหัส', () => {
   const list = [{ popId: 20, name: 'ส.คลองขุนราชพินิจใจ', lat: 13.7, lon: 100.4 }, { popId: 125, name: 'ค.พระยาสุเรนทร์ ถ.จตุโชติ', lat: 13.87621, lon: 100.68614 }];
   assert.equal(matchByLocation(list, 13.87621, 100.68614).popId, 125);
@@ -125,4 +125,15 @@ test('ข้อมูลผิดรูปแบบ/ไม่รู้ตลิ�
   assert.equal(stationStatus({ wl: 1.2, bank: null, time: NOW }, 0.08, 90, NOW).status, 'yellow');       // ไม่รู้ตลิ่งแต่ขึ้นเร็ว
   // บ้านไม่มีข้อมูลที่ใช้ได้ → สถานะรวม unknown ไม่ใช่เขียว
   assert.equal(overallStatus({ up: 'green', home: 'unknown', down: 'green' }).status, 'unknown');
+});
+
+test('POPNIX ไม่มีพิกัด → จับคู่ด้วยรหัส + ชื่อจุด (ไม่จับคู่สถานีที่ชื่อคนละที่)', () => {
+  const list = [
+    { popId: 124, name: 'ค.พระยาสุเรนทร์  คู้บอน', lat: null, lon: null },
+    { popId: 125, name: 'ค.พระยาสุเรนทร์  ถ.จตุโชติ', lat: null, lon: null },
+    { popId: 20, name: 'ส.คลองขุนราชพินิจใจ', lat: null, lon: null },
+  ];
+  assert.equal(matchStation(list, { id: 124, name: 'ปตร.พระยาสุเรนทร์ ตอนคู้บอน', lat: 13.85, lon: 100.68 }).popId, 124);
+  assert.equal(matchStation(list, { id: 125, name: 'ค.พระยาสุเรนทร์ ถ.จตุโชติ', lat: 13.87, lon: 100.68 }).popId, 125);
+  assert.equal(matchStation(list, { id: 20, name: 'ปตร.คลองพระยาสุเรนทร์', lat: 13.92, lon: 100.68 }), null);
 });

@@ -466,7 +466,7 @@ function stationHtml(s, i) {
   const meta = [
     s.time ? `วัดเมื่อ ${fmtTime(s.time)}` : '',
     s.distKm != null ? `ห่างบ้าน ${s.distKm} กม.` : '',
-    s.src === 'tw' ? 'ThaiWater (สสน.)' : s.via === 'POPNIX' ? 'ข้อมูล: สำนักการระบายน้ำ กทม. ผ่าน POPNIX Flood' : 'กทม.',
+    s.src === 'tw' ? 'ThaiWater (สสน.)' : s.via === 'POPNIX' ? 'ข้อมูล: สำนักการระบายน้ำ กทม. ผ่าน POPNIX Flood' : s.via === 'ThaiWater' ? 'ข้อมูล: สำนักการระบายน้ำ กทม. ผ่าน ThaiWater' : 'กทม.',
     s.agencyStatus ? `หน่วยงานประเมิน: ${s.agencyStatus}` : '',
   ].filter(Boolean).join(' · ');
   const extra = [

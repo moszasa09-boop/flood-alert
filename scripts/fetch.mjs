@@ -8,8 +8,9 @@ import { fetchRainDaily, rainWindowAhead } from '../src/sources/openmeteo.mjs';
 import { fetchRiver, refreshRiver } from '../src/sources/river.mjs';
 import { fetchRadarNow } from '../src/sources/radar.mjs';
 import { buildPasak, fetchPasakDam, RAMA6_CODE } from '../src/sources/pasak.mjs';
+import { fetchTwCanal } from '../src/sources/twcanal.mjs';
 import { decide, deliver } from '../src/notify.mjs';
-import { fetchPopnixAll, fetchPopnixHistory, matchByLocation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
+import { fetchPopnixAll, fetchPopnixHistory, matchStation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
 import { fetchBmaAll, fetchBmaHistory } from '../src/sources/bma.mjs';
 import { fetchThaiwater } from '../src/sources/thaiwater.mjs';
 import { stationStatus, overallStatus, risingRate, worst } from '../src/status.mjs';
@@ -59,9 +60,9 @@ async function main() {
   // SKIP=bma,popnix,tw,rain ใช้จำลองกรณีแหล่งข้อมูลล่ม (ทดสอบ) — SKIP_BMA=1 เท่ากับ SKIP=bma
   const skip = new Set([...(process.env.SKIP || '').split(','), process.env.SKIP_BMA ? 'bma' : ''].filter(Boolean));
   const get = (name, fn) => (skip.has(name) ? Promise.reject(new Error(`ข้าม (SKIP=${name})`)) : fn());
-  const [bma, tw, rainRes, pop, riverRes, radarRes, pasakDamRes] = await Promise.allSettled([
+  const [bma, tw, rainRes, pop, riverRes, radarRes, pasakDamRes, twcRes] = await Promise.allSettled([
     get('bma', fetchBmaAll), get('tw', fetchThaiwater), get('rain', fetchRainDaily), get('popnix', fetchPopnixAll),
-    get('river', fetchRiver), get('radar', fetchRadarNow), get('pasak', fetchPasakDam),
+    get('river', fetchRiver), get('radar', fetchRadarNow), get('pasak', fetchPasakDam), get('twcanal', fetchTwCanal),
   ]);
   const sources = {
     bma: bma.status === 'fulfilled' ? { ok: true, count: bma.value.length } : { ok: false, error: String(bma.reason?.message || bma.reason) },
@@ -69,6 +70,7 @@ async function main() {
     rain: rainRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(rainRes.reason?.message || rainRes.reason) },
     river: riverRes.status === 'fulfilled' ? { ok: true, count: riverRes.value.stations.length } : { ok: false, error: String(riverRes.reason?.message || riverRes.reason) },
     radar: radarRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(radarRes.reason?.message || radarRes.reason) },
+    twcanal: twcRes.status === 'fulfilled' ? { ok: true, used: 0 } : { ok: false, error: String(twcRes.reason?.message || twcRes.reason) },
     pasakDam: pasakDamRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(pasakDamRes.reason?.message || pasakDamRes.reason) },
     popnix: pop.status === 'fulfilled' ? { ok: true, count: pop.value.length, used: 0, credit: POPNIX_CREDIT } : { ok: false, error: String(pop.reason?.message || pop.reason) },
   };
@@ -88,7 +90,7 @@ async function main() {
     for (const ref of node.stations) {
       if (ref.src !== 'bma' || pop.status !== 'fulfilled') continue;
       const key = `bma:${ref.id}`;
-      const p = matchByLocation(pop.value, ref.lat, ref.lon);
+      const p = matchStation(pop.value, ref);
       if (!p || p.wl === null || !p.time) continue;
       popMatch.set(key, p);
       const direct = index.get(key);
@@ -108,6 +110,29 @@ async function main() {
         url: 'https://flood.pop.in.th',
       });
       sources.popnix.used++;
+    }
+  }
+
+  // แหล่งสำรองชั้นที่ 3: ThaiWater (ข้อมูล กทม.) — ใช้เมื่อใหม่กว่าค่าที่มีอยู่ (ต้นทางนี้หยุดเป็นช่วงๆ)
+  if (twcRes.status === 'fulfilled') {
+    for (const node of NODES) {
+      for (const ref of node.stations) {
+        if (ref.src !== 'bma' || !ref.code) continue;
+        const key = `bma:${ref.id}`;
+        const c = twcRes.value.get(ref.code);
+        if (!c || c.time > now + 30 * 60000) continue;
+        const cur = index.get(key);
+        if (cur?.time && cur.time >= c.time) continue;
+        const base = cur || prevStations.get(key) || { key, src: 'bma', id: ref.id, isGate: false, wlOut: null };
+        index.set(key, {
+          ...base, key, src: 'bma', id: ref.id,
+          name: base.name && base.name !== key ? base.name : ref.name || c.name,
+          lat: ref.lat, lon: ref.lon, time: c.time, wl: c.wl, wlOut: null,
+          bank: ref.bank ?? base.bank ?? null,
+          agencyStatus: null, via: 'ThaiWater', url: 'https://www.thaiwater.net/bma',
+        });
+        sources.twcanal.used++;
+      }
     }
   }
 
@@ -180,6 +205,15 @@ async function main() {
   // สถานีบ้านที่เป็นแดงรอบนี้ (key + เวลาวัด) — แดงต้องยืนยันด้วยค่าวัดใหม่ "ของสถานีเดียวกัน"
   const homeRed = nodes.filter((n) => n.role === 'home').flatMap((n) => n.stations).filter((s) => s.status === 'red').map((s) => ({ key: s.key, time: s.time }));
   const overall = overallStatus(groups, { candidateRed: prev?.overall?.candidateRed ?? null }, rain, homeRed);
+  if (overall.status === 'unknown') {
+    // บอกให้ชัดว่าเซนเซอร์ไหนใช้ไม่ได้เพราะอะไร (แทนข้อความทั่วไป)
+    const fmt = (t) => new Date(t + 7 * 3600e3).toISOString().slice(11, 16);
+    const detail = nodes.filter((n) => n.role === 'home').flatMap((n) => n.stations).map((s) =>
+      s.status === 'stale' && s.time ? `${s.name}: เซนเซอร์ไม่ส่งข้อมูลตั้งแต่ ${fmt(s.time)} น.`
+        : s.offline ? `${s.name}: มีเฉพาะบนเว็บ กทม. (ระบบออนไลน์ดึงไม่ได้)`
+        : `${s.name}: ${s.reason}`);
+    overall.reasons = ['ไม่มีข้อมูลคลองใกล้บ้านที่ใช้ได้ — ช่วยดูคลองหนองระแหงด้วยตาเอง', ...detail];
+  }
 
   // แจ้งเตือนเข้ามือถือ (ntfy) — ส่งเฉพาะเมื่อมี NTFY_TOPIC (ตั้งใน GitHub Secrets)
   const homeNode = nodes.find((n) => n.role === 'home');
@@ -253,7 +287,7 @@ async function main() {
 
   // สรุปบนหน้าจอ
   console.log(`[${new Date(now).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}] สถานะรวม: ${overall.status} — ${overall.reasons.join(' / ')}`);
-  console.log(`  แหล่งข้อมูล: กทม. ${sources.bma.ok ? '✓ ' + sources.bma.count : '✗ ' + sources.bma.error} · POPNIX ${sources.popnix.ok ? '✓ ใช้ ' + sources.popnix.used + ' สถานี' : '✗ ' + sources.popnix.error} · แม่น้ำ ${sources.river.ok ? '✓ ' + sources.river.count : '✗ ' + sources.river.error} · เรดาร์ ${sources.radar.ok ? '✓' : '✗ ' + sources.radar.error} · ป่าสัก ${pasak ? `ล้น ${pasak.front.overflowCount} จุด` : '✗'}${pasakDam ? ` เขื่อน ${pasakDam.storagePct}% ปล่อย ${pasakDam.releaseCms} ลบ.ม./วิ` : ''} · ThaiWater ${sources.tw.ok ? '✓ ' + sources.tw.count : '✗ ' + sources.tw.error} · ฝน ${sources.rain.ok ? '✓ ' + rainDays.map((d) => `${d.date.slice(5)} ${d.mm}มม./${d.prob}%`).join(', ') : '✗ ' + sources.rain.error}`);
+  console.log(`  แหล่งข้อมูล: กทม. ${sources.bma.ok ? '✓ ' + sources.bma.count : '✗ ' + sources.bma.error} · POPNIX ${sources.popnix.ok ? '✓ ใช้ ' + sources.popnix.used + ' สถานี' : '✗ ' + sources.popnix.error} · TW-กทม. ${sources.twcanal.ok ? '✓ ใช้ ' + sources.twcanal.used : '✗'} · แม่น้ำ ${sources.river.ok ? '✓ ' + sources.river.count : '✗ ' + sources.river.error} · เรดาร์ ${sources.radar.ok ? '✓' : '✗ ' + sources.radar.error} · ป่าสัก ${pasak ? `ล้น ${pasak.front.overflowCount} จุด` : '✗'}${pasakDam ? ` เขื่อน ${pasakDam.storagePct}% ปล่อย ${pasakDam.releaseCms} ลบ.ม./วิ` : ''} · ThaiWater ${sources.tw.ok ? '✓ ' + sources.tw.count : '✗ ' + sources.tw.error} · ฝน ${sources.rain.ok ? '✓ ' + rainDays.map((d) => `${d.date.slice(5)} ${d.mm}มม./${d.prob}%`).join(', ') : '✗ ' + sources.rain.error}`);
   for (const n of nodes) {
     console.log(`  ${n.status.padEnd(7)} ${n.name}`);
     for (const s of n.stations) {

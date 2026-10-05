@@ -60,3 +60,16 @@ export function matchByLocation(list, lat, lon, maxKm = 0.2) {
   }
   return bestKm <= maxKm ? best : null;
 }
+
+// จับคู่สถานี POPNIX กับสถานี กทม.: ใช้ตำแหน่งก่อน · ถ้า POPNIX ไม่มีพิกัด ใช้ "รหัสตรงกัน + ชื่อจุดตรงกัน"
+// (บางรหัสใน POPNIX ชื่อเป็นคนละสถานี เช่น 20 = ส.คลองขุนราชพินิจใจ จึงต้องเช็กชื่อด้วย ไม่ใช้รหัสอย่างเดียว)
+const tokens = (s) => String(s || '').replace(/\s+/g, ' ').trim().split(' ').map((w) => w.replace(/^(ค\.|ปตร\.|ส\.|คลอง|จุดวัด)/, '')).filter((w) => w.length >= 3);
+export function matchStation(list, ref) {
+  const byLoc = matchByLocation(list, ref.lat, ref.lon);
+  if (byLoc) return byLoc;
+  const p = list.find((s) => s.popId === ref.id);
+  if (!p || (p.lat != null && p.lon != null)) return null; // มีพิกัดแต่ห่างเกิน = คนละสถานี
+  const refName = String(ref.name || '');
+  const placeTokens = tokens(p.name).filter((w) => !/^พระยาสุเรนทร์|^แสนแสบ|^ประเวศ/.test(w)); // ตัดชื่อคลองออก เหลือชื่อจุด
+  return placeTokens.some((w) => refName.includes(w)) ? p : null;
+}
