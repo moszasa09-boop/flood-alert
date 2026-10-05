@@ -73,3 +73,16 @@ test('ช่วงฝนจากพยากรณ์รายชั่วโ�
   assert.equal(w.maxProb, 80);
   assert.equal(rainWindowAhead([h(14, 5, 30)], now), null);
 });
+
+import { parseRss, mergeNews } from '../src/sources/news.mjs';
+test('ข่าว: อ่าน RSS ตัดชื่อสำนัก/ส่วนท้าย · ตัดข่าวซ้ำ/เก่า · ป้ายเร่งด่วน', () => {
+  const xml = `<rss><channel><item><title>กทม. เร่งกู้ถนนฝั่งตะวันออก โยกเครื่องสูบเสริมจุดวิกฤต | The Standard - thestandard.co</title><link>https://news.google.com/a</link><pubDate>Mon, 05 Oct 2026 18:00:00 GMT</pubDate><source url="x">thestandard.co</source></item>
+  <item><title>ข่าว &amp;amp; ทดสอบ - ไทยรัฐ</title><link>https://news.google.com/b</link><pubDate>Mon, 05 Oct 2026 17:00:00 GMT</pubDate><source url="y">ไทยรัฐ</source></item></channel></rss>`;
+  const items = parseRss(xml);
+  assert.equal(items[0].title, 'กทม. เร่งกู้ถนนฝั่งตะวันออก โยกเครื่องสูบเสริมจุดวิกฤต');
+  assert.equal(items[1].title, 'ข่าว & ทดสอบ');
+  const now = Date.parse('2026-10-05T19:00:00Z');
+  const m = mergeNews([{ cat: 'home', label: 'ใกล้บ้าน', items }, { cat: 'bkk', label: 'กทม.', items: [items[0], { ...items[1], title: 'เก่ามาก', time: now - 100 * 3600e3 }] }], now);
+  assert.equal(m.length, 2);           // ซ้ำ 1 + เก่า 1 ถูกตัด
+  assert.equal(m[0].urgent, true);     // "วิกฤต"
+});

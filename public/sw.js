@@ -1,8 +1,8 @@
 // Service worker: เปิดแอปได้แม้เน็ตหลุด (แสดงข้อมูลล่าสุดที่เคยโหลด)
-const VERSION = 'v7';
+const VERSION = 'v8';
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = `runtime-${VERSION}`;
-const SHELL_FILES = ['./', 'index.html', 'style.css', 'app.js', 'rain.js', 'rain-core.js', 'river.js', 'lib.js', 'dashboard.js', 'flowmap.js', 'fresh.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
+const SHELL_FILES = ['./', 'index.html', 'style.css', 'app.js', 'rain.js', 'rain-core.js', 'river.js', 'lib.js', 'dashboard.js', 'flowmap.js', 'fresh.js', 'news.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));

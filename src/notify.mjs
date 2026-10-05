@@ -60,16 +60,17 @@ export function decide(state, ctx) {
     rainWindowStart: null, rainWindowEnd: null, raining: false, rainStartedAt: null, lastWetAt: null, dryRuns: 0, approachAt: 0,
     riverFrontIdx: undefined, damNotified: null,
     rainRemindFor: null, rainUpdateAt: 0, riseAt: {}, overbank: {},
-    pasakFrontIdx: undefined, pasakRelease: null, pasakFull: null,
+    pasakFrontIdx: undefined, pasakRelease: null, pasakFull: null, newsSeen: null,
     ...(state || {}),
   };
-  const { status, reasons = [], home, now, rainWindow, radar, rainToday, river, pasak, stations = [] } = ctx;
+  const { status, reasons = [], home, now, rainWindow, radar, rainToday, river, pasak, news = null, stations = [] } = ctx;
   const msgs = [];
   statusAlerts(s, msgs, { status, reasons, home, now });
   rainAlerts(s, msgs, { rainWindow, radar, home, now });
   stationAlerts(s, msgs, stations, now);
   riverAlerts(s, msgs, river);
   pasakAlerts(s, msgs, pasak);
+  newsAlerts(s, msgs, news);
 
   // สรุปเช้า (วันละครั้ง ช่วง 07:00–07:59)
   if (thaiHour(now) === MORNING_HOUR && s.morningDate !== thaiDate(now)) {
@@ -298,6 +299,22 @@ function stationAlerts(s, msgs, stations, now) {
   }
   for (const k of Object.keys(s.overbank)) if (!seen.has(k) && now - (s.overbank[k].firstAt || 0) > 24 * 3600e3) delete s.overbank[k];
   for (const k of Object.keys(s.riseAt)) if (now - s.riseAt[k] > 24 * 3600e3) delete s.riseAt[k];
+}
+
+// ข่าวด่วน "ใกล้บ้าน" (มีคำเร่งด่วน) — แจ้งข่าวใหม่ครั้งเดียว สูงสุด 2 ข่าวต่อรอบ · รอบแรกจำไว้เฉยๆ ไม่ส่งข่าวเก่า
+const newsKey = (t) => String(t).replace(/\s+/g, '').slice(0, 50);
+function newsAlerts(s, msgs, news) {
+  if (!Array.isArray(news)) return;
+  const first = s.newsSeen === null;
+  const seen = new Set(s.newsSeen || []);
+  const fresh = news.filter((n) => n.cat === 'home' && n.urgent && !seen.has(newsKey(n.title)));
+  if (!first) {
+    for (const n of fresh.slice(0, 2)) {
+      msgs.push({ title: `📰 ข่าวด่วนใกล้บ้าน: ${n.title.slice(0, 80)}`, message: `${n.source} · ${hm(n.time)} น.\nแตะเพื่อเปิดแอป แล้วดูแท็บ "ข่าว"`, priority: 3, tags: ['newspaper'] });
+    }
+  }
+  for (const n of news) seen.add(newsKey(n.title));
+  s.newsSeen = [...seen].slice(-200);
 }
 
 // แม่น้ำป่าสัก (ต้นทางคลองระพีพัฒน์ → บ้านเรา) + เขื่อนป่าสักชลสิทธิ์

@@ -9,6 +9,7 @@ import { fetchRiver, refreshRiver } from '../src/sources/river.mjs';
 import { fetchRadarNow } from '../src/sources/radar.mjs';
 import { buildPasak, fetchPasakDam, RAMA6_CODE } from '../src/sources/pasak.mjs';
 import { fetchTwCanal } from '../src/sources/twcanal.mjs';
+import { fetchNews } from '../src/sources/news.mjs';
 import { decide, deliver } from '../src/notify.mjs';
 import { fetchPopnixAll, fetchPopnixHistory, matchStation, POPNIX_CREDIT } from '../src/sources/popnix.mjs';
 import { fetchBmaAll, fetchBmaHistory } from '../src/sources/bma.mjs';
@@ -60,9 +61,9 @@ async function main() {
   // SKIP=bma,popnix,tw,rain ใช้จำลองกรณีแหล่งข้อมูลล่ม (ทดสอบ) — SKIP_BMA=1 เท่ากับ SKIP=bma
   const skip = new Set([...(process.env.SKIP || '').split(','), process.env.SKIP_BMA ? 'bma' : ''].filter(Boolean));
   const get = (name, fn) => (skip.has(name) ? Promise.reject(new Error(`ข้าม (SKIP=${name})`)) : fn());
-  const [bma, tw, rainRes, pop, riverRes, radarRes, pasakDamRes, twcRes] = await Promise.allSettled([
+  const [bma, tw, rainRes, pop, riverRes, radarRes, pasakDamRes, twcRes, newsRes] = await Promise.allSettled([
     get('bma', fetchBmaAll), get('tw', fetchThaiwater), get('rain', fetchRainDaily), get('popnix', fetchPopnixAll),
-    get('river', fetchRiver), get('radar', fetchRadarNow), get('pasak', fetchPasakDam), get('twcanal', fetchTwCanal),
+    get('river', fetchRiver), get('radar', fetchRadarNow), get('pasak', fetchPasakDam), get('twcanal', fetchTwCanal), get('news', () => fetchNews(now)),
   ]);
   const sources = {
     bma: bma.status === 'fulfilled' ? { ok: true, count: bma.value.length } : { ok: false, error: String(bma.reason?.message || bma.reason) },
@@ -70,6 +71,7 @@ async function main() {
     rain: rainRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(rainRes.reason?.message || rainRes.reason) },
     river: riverRes.status === 'fulfilled' ? { ok: true, count: riverRes.value.stations.length } : { ok: false, error: String(riverRes.reason?.message || riverRes.reason) },
     radar: radarRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(radarRes.reason?.message || radarRes.reason) },
+    news: newsRes.status === 'fulfilled' ? { ok: true, count: newsRes.value.items.length } : { ok: false, error: String(newsRes.reason?.message || newsRes.reason) },
     twcanal: twcRes.status === 'fulfilled' ? { ok: true, used: 0 } : { ok: false, error: String(twcRes.reason?.message || twcRes.reason) },
     pasakDam: pasakDamRes.status === 'fulfilled' ? { ok: true } : { ok: false, error: String(pasakDamRes.reason?.message || pasakDamRes.reason) },
     popnix: pop.status === 'fulfilled' ? { ok: true, count: pop.value.length, used: 0, credit: POPNIX_CREDIT } : { ok: false, error: String(pop.reason?.message || pop.reason) },
@@ -232,6 +234,8 @@ async function main() {
   const pasakDam = pasakDamRes.status === 'fulfilled' ? pasakDamRes.value : prev?.pasak?.dam ?? null;
   const pasak = refreshRiver(buildPasak(index, pasakDam, now) ?? (prev?.pasak ? { ...prev.pasak, dam: pasakDam } : null), now);
   const pFront = pasak?.front?.overflow;
+  // ข่าว: ดึงไม่ได้ → ใช้ชุดเดิม (หน้าเว็บแสดงเวลาที่ดึงล่าสุด)
+  const news = newsRes.status === 'fulfilled' ? newsRes.value : prev?.news ? { ...prev.news, ok: false } : null;
   const rainWindow = rainWindowAhead(rainDays.hourly, now);
   const front = river?.front?.overflow;
   const decision = decide(prev?.notify, {
@@ -249,6 +253,7 @@ async function main() {
       overflowCount: pasak.front.overflowCount,
       dam: pasakDam && pasakDam.time && now - pasakDam.time < 48 * 3600e3 ? pasakDam : null,
     } : null,
+    news: newsRes.status === 'fulfilled' ? newsRes.value.items : null,
     stations: nodes.flatMap((n) => n.stations.map((s) => ({ key: s.key, name: s.name, role: n.role, status: s.status, wl: s.wl, bank: s.bank, margin: s.margin, rate: s.rate, time: s.time }))),
     river: river ? {
       frontIdx: front ? river.stations.indexOf(front) : null,
@@ -285,6 +290,7 @@ async function main() {
     radar,
     river: river ?? null,
     pasak: pasak ?? null,
+    news,
     notify: decision.state,
     nodes,
   };

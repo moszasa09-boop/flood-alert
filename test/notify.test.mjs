@@ -215,3 +215,14 @@ test('ป่าสัก: ล้นถึงจุดแยกเข้าคล
   r = run(r.state, 'yellow', 30, { pasak: p(9, 470) });                        // ปล่อยเพิ่ม 70 จากที่แจ้งไว้ (400)
   assert.match(r.messages[0].title, /เพิ่มการปล่อยน้ำเป็น 470/);
 });
+
+test('ข่าวด่วนใกล้บ้าน: รอบแรกไม่ส่งข่าวเก่า · ข่าวใหม่ส่งครั้งเดียว · ข่าวทั่วไปไม่ส่ง', () => {
+  const item = (title, cat = 'home', urgent = true) => ({ title, cat, urgent, source: 'สำนักข่าว', time: min(0) });
+  let r = run({ lastStatus: 'yellow' }, 'yellow', 0, { news: [item('ข่าวเก่า เร่งด่วน')] });
+  assert.equal(r.messages.length, 0);
+  r = run(r.state, 'yellow', 15, { news: [item('ข่าวเก่า เร่งด่วน'), item('คันกั้นน้ำคลองสามวาแตก'), item('ข่าวกรุงเทพทั่วไป', 'bkk'), item('ใกล้บ้านไม่ด่วน', 'home', false)] });
+  assert.equal(r.messages.length, 1);
+  assert.match(r.messages[0].title, /คันกั้นน้ำคลองสามวาแตก/);
+  r = run(r.state, 'yellow', 30, { news: [item('คันกั้นน้ำคลองสามวาแตก')] });
+  assert.equal(r.messages.length, 0);
+});

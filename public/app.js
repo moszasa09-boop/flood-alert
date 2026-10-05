@@ -16,6 +16,7 @@ function tabError(sel, err) {
 const renderRiver = (...a) => lazy('river').then((m) => m.renderRiver(...a)).catch((e) => tabError('#river-body', e));
 const renderDashboard = (...a) => lazy('dashboard').then((m) => m.renderDashboard(...a)).catch((e) => tabError('#dash-body', e));
 const initRain = (...a) => lazy('rain').then((m) => m.initRain(...a)).catch((e) => tabError('#rain-now', e));
+const renderNews = (...a) => lazy('news').then((m) => m.renderNews(...a)).catch((e) => tabError('#news-body', e));
 const REFRESH_MS = 5 * 60 * 1000;
 const HOME_FALLBACK = { lat: 13.91, lon: 100.70 };
 const STALE_DATA_MIN = 75;           // ไฟล์ข้อมูลเก่ากว่านี้ = เตือนให้เช็กเอง
@@ -173,6 +174,7 @@ function render() {
   renderLine();
   renderInfo();
   renderRainCountdown();
+  if (!$('#tab-news').hidden) renderNews(DATA.news);
   if (!$('#tab-dash').hidden) { renderDashboard(DATA, HISTORY, { stale: dataStale }); loadHistory().then((h) => { if (!$('#tab-dash').hidden) renderDashboard(DATA, h, { stale: dataStale }); }); }
   if (!$('#tab-river').hidden) renderRiver(DATA.river, riverOpts(dataStale));
   if (map || !$('#tab-map').hidden) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
@@ -548,6 +550,7 @@ function renderInfo() {
     <div>ดึงข้อมูลล่าสุด: ${fmtTime(DATA.generatedAt)}</div>
     <div>พยากรณ์ฝน (Open-Meteo): ${src.rain ? (src.rain.ok ? '✅' : `❌ ${esc(src.rain.error)}`) : '—'}</div>
     <div>แม่น้ำเจ้าพระยา (POPNIX): ${src.river ? (src.river.ok ? `✅ ${src.river.count} สถานี` : `❌ ${esc(src.river.error)}`) : '—'}</div>
+    <div>ข่าว (Google News): ${src.news ? (src.news.ok ? `✅ ${src.news.count} ข่าว` : `❌ ${esc(src.news.error)}`) : '—'}</div>
     <div>เรดาร์ฝน (RainViewer): ${src.radar ? (src.radar.ok ? '✅ วิเคราะห์ทุกรอบ + โหลดสดในแท็บ "ฝน"' : `❌ ${esc(src.radar.error)}`) : 'โหลดสดในแท็บ "ฝน"'}</div>`;
   updateNotifState();
 }
@@ -613,6 +616,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   if (tab === 'map' && DATA) { renderMap(); setTimeout(() => map && map.invalidateSize(), 50); }
   if (tab === 'dash' && DATA) { renderDashboard(DATA, HISTORY, { stale: STALE_VIEW }); loadHistory().then((h) => { if (!$('#tab-dash').hidden) renderDashboard(DATA, h, { stale: STALE_VIEW }); }); }
+  if (tab === 'news' && DATA) renderNews(DATA.news);
   if (tab === 'rain') initRain({ home: DATA?.home || HOME_FALLBACK, calm });
   if (tab === 'river' && DATA) renderRiver(DATA.river, riverOpts(STALE_VIEW));
   store.set('tab', tab);
