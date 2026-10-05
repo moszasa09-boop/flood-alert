@@ -207,9 +207,15 @@ async function main() {
   const overall = overallStatus(groups, { candidateRed: prev?.overall?.candidateRed ?? null }, rain, homeRed);
   if (overall.status === 'unknown') {
     // บอกให้ชัดว่าเซนเซอร์ไหนใช้ไม่ได้เพราะอะไร (แทนข้อความทั่วไป)
-    const fmt = (t) => new Date(t + 7 * 3600e3).toISOString().slice(11, 16);
+    // ระบุวันที่ด้วยถ้าไม่ใช่วันนี้ · ใช้คำกลางๆ: ระบบออนไลน์แยกไม่ได้ว่าเซนเซอร์เสียหรือแหล่งข้อมูลไม่อัปเดต
+    const TH_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const fmt = (t) => {
+      const d = new Date(t + 7 * 3600e3), today = new Date(now + 7 * 3600e3);
+      const hm = d.toISOString().slice(11, 16);
+      return d.toISOString().slice(0, 10) === today.toISOString().slice(0, 10) ? `${hm} น.` : `${d.getUTCDate()} ${TH_MON[d.getUTCMonth()]} ${hm} น.`;
+    };
     const detail = nodes.filter((n) => n.role === 'home').flatMap((n) => n.stations).map((s) =>
-      s.status === 'stale' && s.time ? `${s.name}: เซนเซอร์ไม่ส่งข้อมูลตั้งแต่ ${fmt(s.time)} น.`
+      s.status === 'stale' && s.time ? `${s.name}: ไม่มีข้อมูลใหม่ตั้งแต่ ${fmt(s.time)}${s.via === 'ThaiWater' ? ' (แหล่งออนไลน์ไม่อัปเดต — เซนเซอร์อาจยังทำงาน)' : ''}`
         : s.offline ? `${s.name}: มีเฉพาะบนเว็บ กทม. (ระบบออนไลน์ดึงไม่ได้)`
         : `${s.name}: ${s.reason}`);
     overall.reasons = ['ไม่มีข้อมูลคลองใกล้บ้านที่ใช้ได้ — ช่วยดูคลองหนองระแหงด้วยตาเอง', ...detail];
